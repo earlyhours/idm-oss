@@ -1,5 +1,8 @@
 #include "downloadmanager.h"
 #include <QDir>
+#include <QDateTime>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -21,6 +24,41 @@
 #include <cstring>
 #include <unistd.h>
 
+namespace {
+bool httpUrl(const QUrl &url) {
+    return url.isValid() && (url.scheme() == "http" || url.scheme() == "https") && !url.host().isEmpty() && url.userInfo().isEmpty();
+}
+QString origin(const QUrl &url) { return url.scheme().toLower() + "://" + url.host().toLower() + ":" + QString::number(url.port(url.scheme() == "https" ? 443 : 80)); }
+bool requestHeaders(const QVariantMap &input, QVariantMap &result, QString &error) {
+    const QStringList allowed{"cookie", "authorization", "user-agent", "referer", "origin", "accept", "accept-language"};
+    if (input.size() > 64) { error = DownloadManager::tr("Too many request headers."); return false; }
+    qsizetype length = 0;
+    for (auto it = input.begin(); it != input.end(); ++it) {
+        const auto name = it.key().toLower(); const auto value = it.value().toString(); length += name.size() + value.size();
+        if (it.value().metaType().id() != QMetaType::QString || value.size() > 16384 || length > 65536 ||
+            !QRegularExpression("^[!#$%&'*+.^_`|~0-9a-z-]+$").match(name).hasMatch() ||
+            value.contains(QRegularExpression("[\\x00-\\x1f\\x7f]"))) {
+            error = DownloadManager::tr("Invalid request header. Control characters and oversized headers are rejected."); return false;
+        }
+        if (!allowed.contains(name)) continue;
+        if ((name == "referer" || name == "origin") && !(name == "origin" && value == "null") && !httpUrl(QUrl(value,QUrl::StrictMode))) {
+            error = DownloadManager::tr("Invalid request origin or referrer."); return false;
+        }
+        result.insert(name,value);
+    }
+    return true;
+}
+QString category(const QString &filename, bool media) {
+    const auto suffix = QFileInfo(filename).suffix().toLower();
+    if (QStringList{"zip","7z","rar","tar","gz","xz","bz2","zst"}.contains(suffix)) return "Compressed";
+    if (QStringList{"pdf","txt","doc","docx","odt","ods","xls","xlsx","ppt","pptx","epub","csv","rtf"}.contains(suffix)) return "Documents";
+    if (QStringList{"mp3","m4a","wav","flac","ogg","opus","aac","mka"}.contains(suffix)) return "Music";
+    if (media || QStringList{"mp4","mkv","webm","mov","avi","m4v","ts"}.contains(suffix)) return "Video";
+    if (QStringList{"exe","msi","appimage","deb","rpm","apk","sh"}.contains(suffix)) return "Programs";
+    return "Other";
+}
+}
+
 struct DownloadManager::Impl {
     struct Part {
         qint64 first = 0, last = -1, bytes = 0;
@@ -29,8 +67,16 @@ struct DownloadManager::Impl {
         bool checked = false;
     };
     struct Job {
-        QString id, url, path, status = "paused", error;
-        int connections = 4;
+        QString id, url, path, status = "paused", error, title, pageUrl, description;
+        QString format;
+        QString created = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        QVariantMap headers;
+        bool media = false;
+        QPointer<QProcess> process;
+        QByteArray processOutput;
+        double mediaSpeed = 0;
+        qint64 mediaEta = -1;
+        int connections = 4, httpStatus = 0;
         qint64 total = -1, baseline = 0;
         QByteArray validator, validatorHeader;
         bool ranged = false;
@@ -67,6 +113,11 @@ struct DownloadManager::Impl {
     void stop(const std::shared_ptr<Job> &j) {
         if (j->status == "probing" || j->status == "downloading") j->status = "paused";
         if (j->probe) { j->probe->disconnect(q); j->probe->abort(); j->probe->deleteLater(); j->probe = nullptr; }
+        if (j->process) {
+            auto process = j->process; j->process = nullptr; process->disconnect(q);
+            process->terminate(); if (!process->waitForFinished(1500)) { process->kill(); process->waitForFinished(1000); }
+            process->deleteLater();
+        }
         for (auto &p : j->parts) {
             if (p->reply) { p->reply->disconnect(q); p->reply->abort(); p->reply->deleteLater(); p->reply = nullptr; }
             if (p->file) { p->file->close(); p->file.reset(); }
@@ -78,10 +129,12 @@ struct DownloadManager::Impl {
         QJsonArray rows;
         for (const auto &j : jobs) {
             QJsonArray parts;
-            if (j->status != "complete") for (auto &p : j->parts) parts.append(QJsonObject{{"first", QString::number(p->first)}, {"last", QString::number(p->last)}});
+            if (!j->media && j->status != "complete") for (auto &p : j->parts) parts.append(QJsonObject{{"first", QString::number(p->first)}, {"last", QString::number(p->last)}});
             rows.append(QJsonObject{{"id", j->id}, {"url", j->url}, {"path", j->path}, {"status", j->status}, {"error", j->error},
                         {"connections", j->connections}, {"total", QString::number(j->total)}, {"ranged", j->ranged},
-                        {"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts}});
+                        {"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts},
+                        {"headers", QJsonObject::fromVariantMap(j->headers)}, {"created", j->created}, {"title", j->title}, {"pageUrl", j->pageUrl},
+                        {"description", j->description}, {"format", j->format}, {"media", j->media}, {"mediaReceived", QString::number(received(*j))}});
         }
         QSaveFile file(root + "/queue.json");
         const QByteArray bytes = QJsonDocument(QJsonObject{{"version", 1}, {"downloads", rows}}).toJson();
@@ -114,6 +167,20 @@ struct DownloadManager::Impl {
             j->ranged = o.value("ranged").toBool();
             j->status = o.value("status").toString() == "complete" ? "complete" : "paused";
             j->error = o.value("error").toString();
+            j->media = o.value("media").toBool(); j->title = o.value("title").toString(); j->pageUrl = o.value("pageUrl").toString();
+            j->description = o.value("description").toString(); j->format = o.value("format").toString();
+            if (!o.value("created").toString().isEmpty()) j->created = o.value("created").toString();
+            QString headerError;
+            if ((!o.value("headers").isUndefined() && !o.value("headers").isObject()) ||
+                !requestHeaders(o.value("headers").toObject().toVariantMap(),j->headers,headerError) ||
+                (!j->pageUrl.isEmpty() && !httpUrl(QUrl(j->pageUrl,QUrl::StrictMode)))) {
+                error = q->tr("Invalid browser context in saved queue. The queue was left untouched."); writable = false; jobs.clear(); return;
+            }
+            if (j->media) {
+                j->ranged = false;
+                auto p = std::make_shared<Part>(); p->bytes = j->status == "complete" ? std::max<qint64>(0,j->total) : std::max<qint64>(0,o.value("mediaReceived").toString().toLongLong());
+                j->parts.append(p); jobs.append(j); continue;
+            }
             qint64 next = 0; bool valid = true;
             const auto parts = o.value("parts").toArray();
             if (parts.size() > 16 || (j->ranged && (j->total <= 0 || j->validator.isEmpty() ||
@@ -135,11 +202,27 @@ struct DownloadManager::Impl {
             jobs.append(j);
         }
     }
-    QNetworkRequest request(const QString &url) {
-        QNetworkRequest r{QUrl(url)};
+    QNetworkRequest request(const Job &j) {
+        QNetworkRequest r{QUrl(j.url)};
         r.setRawHeader("Accept-Encoding", "identity"); r.setRawHeader("User-Agent", "IDM-Native/0.1");
-        r.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+        for (auto it = j.headers.begin(); it != j.headers.end(); ++it) r.setRawHeader(it.key().toLatin1(),it.value().toString().toUtf8());
+        r.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+        r.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+        r.setAttribute(QNetworkRequest::AuthenticationReuseAttribute, QNetworkRequest::Manual);
+        r.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
         r.setTransferTimeout(30000); return r;
+    }
+    QNetworkReply *get(const std::shared_ptr<Job> &j, const QNetworkRequest &request) {
+        auto reply = network.get(request);
+        QObject::connect(reply,&QNetworkReply::metaDataChanged,q,[j,reply] { j->httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(); });
+        QObject::connect(reply,&QNetworkReply::redirected,q,[this,j,reply](const QUrl &target) {
+            if (!httpUrl(target) || (QUrl(j->url).scheme() == "https" && target.scheme() != "https") ||
+                (!j->headers.isEmpty() && origin(target) != origin(QUrl(j->url)))) {
+                fail(j,q->tr("Redirect to a different origin was blocked to protect browser request credentials.")); return;
+            }
+            reply->redirectAllowed();
+        });
+        return reply;
     }
     bool identity(QNetworkReply *r) { const auto encoding = r->rawHeader("Content-Encoding").trimmed().toLower(); return encoding.isEmpty() || encoding == "identity"; }
     QByteArray validator(QNetworkReply *r, QByteArray &header) {
@@ -217,10 +300,10 @@ struct DownloadManager::Impl {
             auto p = j->parts[i];
             if (p->bytes == p->last - p->first + 1) continue;
             if (!openPart(j,i,true)) return;
-            auto req = request(j->url); const qint64 first = p->first + p->bytes;
+            auto req = request(*j); const qint64 first = p->first + p->bytes;
             req.setRawHeader("Range", "bytes=" + QByteArray::number(first) + "-" + QByteArray::number(p->last));
             req.setRawHeader("If-Range", j->validator);
-            auto r = network.get(req); p->reply = r; p->checked = false;
+            auto r = get(j,req); p->reply = r; p->checked = false;
             r->setReadBufferSize(65536);
             auto consume = [this,j,p,r,first] {
                 if (!p->checked) {
@@ -245,13 +328,69 @@ struct DownloadManager::Impl {
         }
         finish(j); emit q->changed();
     }
+    void startMedia(const std::shared_ptr<Job> &j) {
+        const QString directory = root + "/" + j->id, work = directory + "/media";
+        if (QFileInfo(directory).isSymLink() || QFileInfo(work).isSymLink()) { fail(j,q->tr("Unsafe media working directory.")); return; }
+        // Fragment files lack a common strong validator, so a paused capture restarts safely.
+        if (QFileInfo::exists(work) && !QDir(work).removeRecursively()) { fail(j,q->tr("Cannot reset media working directory.")); return; }
+        if (!QDir().mkpath(work) || !QFile::setPermissions(work,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner)) { fail(j,q->tr("Cannot create private media working directory.")); return; }
+        QFile source(":/mediaworker.py"); const QString helper = root + "/mediaworker.py"; QSaveFile worker(helper);
+        if (QFileInfo(helper).isSymLink() || !source.open(QIODevice::ReadOnly) || !worker.open(QIODevice::WriteOnly) || !worker.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)) { fail(j,q->tr("Cannot prepare private media worker.")); return; }
+        const auto script = source.readAll();
+        if (worker.write(script) != script.size() || !worker.commit()) { fail(j,q->tr("Cannot save private media worker.")); return; }
+        j->parts = {std::make_shared<Part>()}; j->total = -1; j->baseline = 0; j->mediaSpeed = 0; j->mediaEta = -1;
+        j->error.clear(); j->status = "downloading"; j->clock.start(); j->processOutput.clear();
+        if (!save()) { fail(j,error); return; }
+        auto process = new QProcess(q); j->process = process;
+        auto environment = QProcessEnvironment::systemEnvironment(); environment.remove("PYTHONHOME"); environment.remove("PYTHONPATH"); environment.insert("PYTHONNOUSERSITE","1"); environment.insert("PYTHONSAFEPATH","1");
+        process->setProcessEnvironment(environment); process->setWorkingDirectory(work);
+        process->setStandardErrorFile(QProcess::nullDevice());
+        QObject::connect(process,&QProcess::readyReadStandardOutput,q,[this,j,process,work] {
+            j->processOutput += process->readAllStandardOutput();
+            if (j->processOutput.size() > 1024*1024) { fail(j,q->tr("Media worker returned too much output.")); return; }
+            while (j->processOutput.contains('\n')) {
+                if (j->process != process || j->status != "downloading") return;
+                const auto end = j->processOutput.indexOf('\n'); const auto line = j->processOutput.left(end); j->processOutput.remove(0,end+1);
+                QJsonParseError parse; const auto frame = QJsonDocument::fromJson(line,&parse).object();
+                if (parse.error != QJsonParseError::NoError) { fail(j,q->tr("Media worker returned invalid progress.")); return; }
+                const auto type = frame.value("type").toString();
+                if (type == "error") { fail(j,frame.value("error").toString()); return; }
+                if (type == "progress") {
+                    j->parts[0]->bytes = std::max<qint64>(0,frame.value("received").toVariant().toLongLong());
+                    j->total = frame.value("total").toVariant().toLongLong(); if(j->total < received(*j)) j->total = -1;
+                    j->mediaSpeed = std::max(0.0,frame.value("speed").toDouble()); j->mediaEta = frame.value("eta").toVariant().toLongLong(); emit q->changed();
+                } else if (type == "complete") {
+                    const QString path = frame.value("path").toString(), expected = work + "/verified." + QFileInfo(j->path).suffix().toLower();
+                    const auto streams = frame.value("streams").toArray(); bool playable = false;
+                    for (auto stream : streams) if (stream.toString() == "audio" || stream.toString() == "video") playable = true;
+                    const QFileInfo info(path);
+                    if (path != expected || QFileInfo(work).isSymLink() || info.isSymLink() || !info.isFile() || info.size() <= 0 || frame.value("duration").toDouble() <= 0 || !playable) { fail(j,q->tr("Media worker did not produce verified playable output.")); return; }
+                    const QString part = partPath(*j,0);
+                    if (QFileInfo(part).isSymLink() || (QFileInfo::exists(part) && !QFile::remove(part)) || !QFile::rename(path,part)) { fail(j,q->tr("Cannot preserve verified media output.")); return; }
+                    j->parts[0]->bytes = info.size(); j->total = info.size(); finish(j);
+                    if (j->status == "complete") QDir(work).removeRecursively();
+                }
+            }
+        });
+        QObject::connect(process,&QProcess::errorOccurred,q,[this,j](QProcess::ProcessError) { if(j->status == "downloading") fail(j,q->tr("Cannot run the free media worker. Check Python, yt-dlp and FFmpeg installation.")); });
+        QObject::connect(process,&QProcess::finished,q,[this,j,process](int,QProcess::ExitStatus) {
+            if (j->process != process) return;
+            j->process = nullptr; process->deleteLater();
+            if (j->status == "downloading") fail(j,q->tr("Media worker stopped before producing verified output."));
+        });
+        const auto config = QJsonObject{{"url",j->url},{"headers",QJsonObject::fromVariantMap(j->headers)},{"directory",work},{"connections",j->connections},
+                                       {"format",j->format},{"extension",QFileInfo(j->path).suffix().toLower()},
+                                       {"ffmpeg",QStandardPaths::findExecutable("ffmpeg")},{"ffprobe",QStandardPaths::findExecutable("ffprobe")}};
+        process->start("/usr/bin/python3",{helper}); process->write(QJsonDocument(config).toJson(QJsonDocument::Compact)); process->closeWriteChannel(); emit q->changed();
+    }
     void start(const std::shared_ptr<Job> &j) {
         if (!writable) return;
         if (j->status == "complete" || j->status == "downloading" || j->status == "probing") return;
         if (QFileInfo::exists(j->path) || QFileInfo(j->path).isSymLink()) { fail(j,q->tr("Destination already exists. Choose a different filename.")); return; }
+        if (j->media) { startMedia(j); return; }
         j->status = "probing"; j->error.clear(); save(); emit q->changed();
-        auto req = request(j->url); req.setRawHeader("Range", "bytes=0-0");
-        auto r = network.get(req); j->probe = r; r->setReadBufferSize(65536);
+        auto req = request(*j); req.setRawHeader("Range", "bytes=0-0");
+        auto r = get(j,req); j->probe = r; r->setReadBufferSize(65536);
         auto probeBody = std::make_shared<QByteArray>();
         auto serial = std::make_shared<bool>(false);
         auto consume = [this,j,r,probeBody,serial] {
@@ -316,7 +455,7 @@ struct DownloadManager::Impl {
         });
     }
     void startSerial(const std::shared_ptr<Job> &j) {
-        auto req = request(j->url); auto r = network.get(req); j->probe = r;
+        auto req = request(*j); auto r = get(j,req); j->probe = r;
         auto p = std::make_shared<Part>(); j->parts = {p};
         if (!openPart(j,0,false)) return;
         j->ranged = false; j->total = -1; j->status = "downloading"; j->baseline=0; j->clock.start();
@@ -345,32 +484,60 @@ QVariantList DownloadManager::downloads() const {
     QVariantList result;
     for (const auto &j : d->jobs) {
         const auto bytes = d->received(*j);
-        const double speed = j->status == "downloading" && j->clock.isValid() ? (bytes-j->baseline)*1000.0/std::max<qint64>(1,j->clock.elapsed()) : 0;
-        result.append(QVariantMap{{"id",j->id},{"url",j->url},{"path",j->path},{"name",QFileInfo(j->path).fileName()},{"status",j->status},{"received",bytes},{"total",j->total},{"speed",speed},{"connections",j->ranged ? j->parts.size() : 1},{"error",j->error}});
+        const double speed = j->media ? j->mediaSpeed : (j->status == "downloading" && j->clock.isValid() ? (bytes-j->baseline)*1000.0/std::max<qint64>(1,j->clock.elapsed()) : 0);
+        QVariantList parts;
+        for (const auto &p : j->parts) parts.append(QVariantMap{{"received",p->bytes},{"total",j->ranged ? p->last-p->first+1 : j->total}});
+        const qint64 eta = j->status != "downloading" ? -1 : j->media ? j->mediaEta : (speed > 0 && j->total >= bytes ? qint64((j->total-bytes)/speed) : -1);
+        result.append(QVariantMap{{"id",j->id},{"url",j->url},{"path",j->path},{"name",QFileInfo(j->path).fileName()},{"status",j->status},{"received",bytes},{"total",j->total},
+                     {"speed",j->status == "downloading" ? speed : 0},{"connections",j->ranged ? j->parts.size() : 1},{"error",j->error},{"media",j->media},
+                     {"category",category(j->path,j->media)},{"created",j->created},{"resumable",!j->media && j->ranged && !j->validator.isEmpty()},
+                     {"parts",parts},{"eta",eta},{"httpStatus",j->httpStatus},{"description",j->description},{"title",j->title}});
     }
     return result;
 }
 QString DownloadManager::error() const { return d->error; }
 QString DownloadManager::downloadDirectory() const { return d->destination; }
 QString DownloadManager::add(const QString &input, const QString &directory, int connections) {
+    return addRequest({{"url",input},{"directory",directory},{"connections",connections}});
+}
+QString DownloadManager::addRequest(const QVariantMap &request) {
     auto reject = [this](const QString &why) { d->error=why; emit changed(); return QString(); };
     if (!d->writable) return reject(d->error);
-    QUrl url(input.trimmed(),QUrl::StrictMode);
-    if (!url.isValid() || (url.scheme()!="http" && url.scheme()!="https") || url.host().isEmpty() || !url.userInfo().isEmpty()) return reject(tr("Enter an HTTP or HTTPS URL without embedded credentials."));
-    QString name = QFileInfo(url.path()).fileName();
+    QUrl url(request.value("url").toString().trimmed(),QUrl::StrictMode);
+    if (!httpUrl(url)) return reject(tr("Enter an HTTP or HTTPS URL without embedded credentials."));
+    if (request.value("method","GET").toString().compare("GET",Qt::CaseInsensitive) != 0) return reject(tr("Only GET browser requests are supported."));
+    if (request.contains("headers") && request.value("headers").metaType().id() != QMetaType::QVariantMap) return reject(tr("Request headers must be a map of strings."));
+    QVariantMap headers; QString why;
+    if (!requestHeaders(request.value("headers").toMap(),headers,why)) return reject(why);
+    const QString pageUrl = request.value("pageUrl").toString();
+    if (!pageUrl.isEmpty() && !httpUrl(QUrl(pageUrl,QUrl::StrictMode))) return reject(tr("Invalid browser page URL."));
+    const bool media = request.value("media").toBool(); const auto format = request.value("format","best").toString();
+    if (media && !QStringList{"best","1080p","720p","audio"}.contains(format)) return reject(tr("Choose Best, 1080p, 720p, or Audio quality."));
+    if (media && (!QFileInfo::exists("/usr/bin/python3") || QStandardPaths::findExecutable("yt-dlp").isEmpty() || QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty())) return reject(tr("Media capture needs the free Python, yt-dlp and FFmpeg packages."));
+    if (media && !QFile::exists(":/mediaworker.py")) return reject(tr("This build is missing its media worker resource."));
+    QString name = request.value("filename").toString();
+    if (name.isEmpty()) name = media && !request.value("title").toString().isEmpty() ? request.value("title").toString() : QFileInfo(url.path()).fileName();
     name.replace(QRegularExpression("[\\x00-\\x1f\\x7f/\\\\]"),"_");
     if (name.isEmpty() || name=="." || name=="..") name="download";
-    QString dir = directory.isEmpty() ? d->destination : directory;
+    while(name.toUtf8().size()>160) name.chop(1);
+    if (media) {
+        const auto extension = QFileInfo(name).suffix().toLower();
+        if (format == "audio") name = QFileInfo(name).completeBaseName() + ".mka";
+        else if (!QStringList{"mp4","mkv","webm","m4a","mp3","ogg","opus","wav","flac","aac"}.contains(extension)) name = QFileInfo(name).completeBaseName() + ".mkv";
+    }
+    QString dir = request.value("directory").toString(); if(dir.isEmpty()) dir=d->destination;
     if (dir.startsWith("file:")) dir=QUrl(dir).toLocalFile();
     if (!QFileInfo(dir).isAbsolute() || !QDir().mkpath(dir)) return reject(tr("Choose a writable absolute download directory."));
     QString path = QDir(dir).absoluteFilePath(name);
     auto occupied = [this](const QString &path) { if (QFileInfo::exists(path) || QFileInfo(path).isSymLink()) return true; for (auto &j:d->jobs) if(j->path==path) return true; return false; };
     const QString original = path;
-    for (int i=1; occupied(path); ++i) { if(i>10000) return reject(tr("Cannot choose an unused destination filename.")); path=original+"."+QString::number(i); }
-    auto j=std::make_shared<Impl::Job>(); j->id=QUuid::createUuid().toString(QUuid::Id128); j->url=url.toString(QUrl::FullyEncoded); j->path=path; j->connections=std::clamp(connections,1,16);
+    for (int i=1; occupied(path); ++i) { if(i>10000) return reject(tr("Cannot choose an unused destination filename.")); path=media ? QDir(dir).absoluteFilePath(QFileInfo(original).completeBaseName()+"."+QString::number(i)+"."+QFileInfo(original).suffix()) : original+"."+QString::number(i); }
+    auto j=std::make_shared<Impl::Job>(); j->id=QUuid::createUuid().toString(QUuid::Id128); j->url=url.toString(QUrl::FullyEncoded); j->path=path; j->connections=std::clamp(request.value("connections",4).toInt(),1,16);
+    j->headers=headers; j->media=media; j->pageUrl=pageUrl; j->title=request.value("title").toString().left(4096); j->description=request.value("description").toString().left(4096); j->format=format;
     d->jobs.append(j); d->error.clear();
     if (!d->save()) { d->jobs.removeLast(); return {}; }
-    d->start(j); return j->id;
+    if (request.value("start",true).toBool() && !request.value("paused",false).toBool()) d->start(j); else emit changed();
+    return j->id;
 }
 void DownloadManager::pause(const QString &id) { if(auto j=d->find(id)) { d->stop(j); d->save(); emit changed(); } }
 void DownloadManager::resume(const QString &id) { if(auto j=d->find(id)) d->start(j); }
@@ -379,6 +546,10 @@ void DownloadManager::remove(const QString &id) {
     d->stop(j);
     if (QFileInfo(d->root+"/"+j->id).isSymLink()) { d->fail(j,tr("Unsafe partial download path.")); return; }
     if(j->status!="complete") for(int i=0;i<j->parts.size();++i) QFile::remove(d->partPath(*j,i));
+    if (j->media) QDir(d->root+"/"+j->id+"/media").removeRecursively();
     QDir(d->root+"/"+j->id).rmdir("."); d->jobs.removeOne(j); d->save(); emit changed();
 }
 void DownloadManager::pauseAll() { for(auto &j:d->jobs) d->stop(j); d->save(); emit changed(); }
+
+void DownloadManager::resumeAll() { for(auto &j:d->jobs) if(j->status == "paused" || j->status == "error") d->start(j); }
+void DownloadManager::removeCompleted() { QStringList ids; for(auto &j:d->jobs) if(j->status == "complete") ids.append(j->id); for(const auto &id:ids) remove(id); }

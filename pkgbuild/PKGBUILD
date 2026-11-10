@@ -1,10 +1,10 @@
 pkgname=idm-native
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Native Omarchy download manager with parallel transfers and resume'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'xdg-desktop-portal')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'xdg-desktop-portal' 'python' 'yt-dlp' 'ffmpeg')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()
@@ -17,6 +17,9 @@ build() {
 package() {
   cd "$startdir/.."
   install -Dm755 build/idm-native "$pkgdir/usr/bin/idm-native"
+  install -Dm644 tools/install_browser.py "$pkgdir/usr/share/idm-native/install-browser.py"
+  install -d "$pkgdir/usr/share/idm-native/browser"
+  cp -r build/browser/chromium build/browser/firefox "$pkgdir/usr/share/idm-native/browser/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 pkgbuild/idm-native.desktop "$pkgdir/usr/share/applications/idm-native.desktop"
   install -Dm644 pkgbuild/idm-native.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/idm-native.svg"

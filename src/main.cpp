@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <cstdio>
 #include "downloadmanager.h"
+#include "browserbridge.h"
 #include "theme.h"
 #include "portalpicker.h"
 #include "translator.h"
@@ -23,18 +24,18 @@ static void printJson(const QVariantMap &value, bool error = false) {
 }
 
 int main(int argc, char **argv) {
-    const bool headless = argc > 1 && (QString(argv[1]) == "download" || QString(argv[1]) == "skill");
+    const bool headless = argc > 1 && (QString(argv[1]) == "download" || QString(argv[1]) == "skill" || QString(argv[1]) == "browser-host" || QString(argv[1]) == "browser-install");
     if (headless) qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
     app.setApplicationName("idm-native");
-    app.setApplicationVersion("0.1.0");
+    app.setApplicationVersion("0.2.0");
     app.setOrganizationName("idm-native");
     app.setDesktopFileName("idm-native");
     QCommandLineParser parser;
     parser.setApplicationDescription("Native HTTP download manager for Omarchy");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("command", "open, download URL, or skill install", "[command] [URL]");
+    parser.addPositionalArgument("command", "open, download URL, browser-host, browser-install, or skill install", "[command] [URL]");
     parser.addOptions({{{"d", "directory"}, "Download directory", "path"},
                        {{"c", "connections"}, "Parallel connections (1-16)", "count", "4"},
                        {"json", "Print machine-readable results"},
@@ -53,10 +54,18 @@ int main(int argc, char **argv) {
         printJson({{"path", path}});
         return 0;
     }
-    if (command != "open" && command != "download") { parser.showHelp(1); }
+    if (command != "open" && command != "download" && command != "browser-host" && command != "browser-install") { parser.showHelp(1); }
     QString state = parser.value("state-directory");
+    if (state.isEmpty()) state = qEnvironmentVariable("IDM_NATIVE_STATE_DIRECTORY");
     if (state.isEmpty()) state = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (!QDir().mkpath(state)) { printJson({{"error", "Cannot create queue directory"}}, true); return 1; }
+    if (command == "browser-host") return BrowserBridge::nativeHost(state, QCoreApplication::applicationFilePath());
+    if (command == "browser-install") {
+        BrowserBridge installer(state, {}, false);
+        const auto path = installer.install();
+        printJson(path.isEmpty() ? QVariantMap{{"error",installer.error()}} : QVariantMap{{"extensionDirectory",path}}, path.isEmpty());
+        return path.isEmpty() ? 1 : 0;
+    }
     DownloadManager manager(state);
     if (command == "download" && !manager.error().isEmpty()) { printJson({{"error", manager.error()}}, true); return 1; }
     if (command == "download") {
@@ -85,7 +94,27 @@ int main(int argc, char **argv) {
         });
         return app.exec();
     }
-    QQuickStyle::setStyle("Material");
+    auto acceptRequest = [&](const QVariantMap &message) -> QVariantMap {
+        auto add = [&](QVariantMap request) {
+            if (!request.contains("directory") && !qEnvironmentVariableIsEmpty("IDM_NATIVE_DOWNLOAD_DIRECTORY"))
+                request.insert("directory",qEnvironmentVariable("IDM_NATIVE_DOWNLOAD_DIRECTORY"));
+            return manager.addRequest(request);
+        };
+        if (message.value("command")=="download") {
+            const auto id=add(message.value("request").toMap());
+            return id.isEmpty() ? QVariantMap{{"ok",false},{"error",manager.error()}} : QVariantMap{{"ok",true},{"id",id}};
+        }
+        const auto requests=message.value("requests").toList();
+        if (requests.isEmpty() || requests.size()>100) return {{"ok",false},{"error","Batch must contain 1-100 requests."}};
+        QVariantList ids,errors;
+        for (const auto &request:requests) {
+            const auto id=add(request.toMap());
+            if (id.isEmpty()) errors.append(manager.error()); else ids.append(id);
+        }
+        return {{"ok",!ids.isEmpty()},{"ids",ids},{"errors",errors}};
+    };
+    BrowserBridge browserBridge(state,acceptRequest,manager.error().isEmpty());
+    QQuickStyle::setStyle("Basic");
     Translator translator;
     app.installTranslator(&translator);
     Theme theme;
@@ -93,6 +122,7 @@ int main(int argc, char **argv) {
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("picker", &picker);
+    engine.rootContext()->setContextProperty("browserBridge", &browserBridge);
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &manager);

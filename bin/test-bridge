@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/bridge-tests"
+cd "$ROOT/build/bridge-tests"
+qmake6 "$ROOT/tests/browserbridge_tests.pro"
+make -j2
+./browserbridge_tests "$@"

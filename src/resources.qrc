@@ -1,5 +1,6 @@
 <RCC><qresource prefix="/">
 <file alias="Main.qml">Main.qml</file>
+<file alias="mediaworker.py">mediaworker.py</file>
 <file alias="i18n/da.json">i18n/da.json</file>
 <file alias="agent-skill.md">agent-skill.md</file>
 </qresource></RCC>

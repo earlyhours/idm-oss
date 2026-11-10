@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QString>
 #include <memory>
 
@@ -17,10 +18,13 @@ public:
     QString error() const;
     QString downloadDirectory() const;
     Q_INVOKABLE QString add(const QString &url, const QString &directory = {}, int connections = 4);
+    Q_INVOKABLE QString addRequest(const QVariantMap &request);
     Q_INVOKABLE void pause(const QString &id);
     Q_INVOKABLE void resume(const QString &id);
     Q_INVOKABLE void remove(const QString &id);
     Q_INVOKABLE void pauseAll();
+    Q_INVOKABLE void resumeAll();
+    Q_INVOKABLE void removeCompleted();
 signals:
     void changed();
 private:

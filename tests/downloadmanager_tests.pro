@@ -6,3 +6,5 @@ TARGET = downloadmanager_tests
 INCLUDEPATH += ../src
 HEADERS += ../src/downloadmanager.h
 SOURCES += downloadmanager_tests.cpp ../src/downloadmanager.cpp
+
+RESOURCES += ../src/resources.qrc
