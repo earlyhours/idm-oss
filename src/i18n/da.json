@@ -170,5 +170,13 @@
   "Additional HTTP headers": "Yderligere HTTP-headere",
   "Custom HTTP headers (JSON object)": "Brugerdefinerede HTTP-headere (JSON-objekt)",
   "User-Agent and Referer use the fields above. Other headers are preserved here.": "User-Agent og Referer bruger felterne ovenfor. Andre headere bevares her.",
-  "Use at most 64 headers and 64 KB of JSON text.": "Brug højst 64 headere og 64 KB JSON-tekst."
+  "Use at most 64 headers and 64 KB of JSON text.": "Brug højst 64 headere og 64 KB JSON-tekst.",
+  "Browser connected": "Browser tilsluttet",
+  "Browser setup": "Browseropsætning",
+  "%1 active · %2 queued": "%1 aktive · %2 i kø",
+  "+  Add URL": "+  Tilføj URL",
+  "Nothing in this view": "Intet i denne visning",
+  "Your next download starts here": "Din næste overførsel starter her",
+  "Add a URL, drop a link, or send a file from your browser.": "Tilføj en URL, slip et link, eller send en fil fra din browser.",
+  "Ctrl+N to add a download": "Ctrl+N for at tilføje en overførsel"
 }

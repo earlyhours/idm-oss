@@ -39,6 +39,14 @@ Version 0.2.0 was rebuilt after the final QML fixes, reinstalled and launched on
 
 The installed application also fetched `https://www.gnu.org/licenses/gpl-3.0.txt`: 35,149 bytes matched an independent curl fetch, SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`. That HTTPS check preceded the final QML-only rebuild; the backend source was unchanged. Positive and negative TLS fixture tests use the source-built application and private local certificates.
 
+## Native design follow-up, 2026-11-11
+
+The actual Qt interface was redesigned in the requested a.yash0.in style. `bin/test-ui` passed seven cases with no failures, skips or QML warnings after the final design changes. The suite now checks actual header-button activation, empty-to-populated state, default dark mode, round-trip light/dark switching, body and primary-action text contrast of at least 4.5:1, selected progress text contrast, and live Omarchy keyboard-focus color. The 820×500, 80-row, tooltip, scrolling and dialog-fit checks remain intact.
+
+`bin/test-automation` passed all 12 Qt cases after changing the default appearance. The transfer engine and browser transport were unchanged. Both GitHub CI runs for the preceding `8cad4f1` head passed the full suite; those are separate from the follow-up design checks, and a new CI run will validate the redesign commit.
+
+The 0.2.1 Arch package was built and installed. Its GUI opened on workspace 5 without changing the user's focus, and the installed native host answered a framed ping. The app's saved appearance was switched to dark while preserving its other preferences. Dark, light, transfer and settings images in `assets/` are actual Qt renders with isolated fixture downloads. The primary button uses dark text on orange because the original white-on-orange combination was below 4.5:1.
+
 ## Static analysis and limits
 
 Free REA/Ghidra analysis retained pseudocode for six main HTTP/header routines and two native-host routines, with addresses and hashes in [the native report](reverse-engineering/native-analysis.md). Installer re-extraction previously reproduced the descriptor and 187 payload records and refused an unknown installer hash. The original Windows binaries were never executed. Static analysis and new-app tests do not establish recovery/recompilation of proprietary source or complete original-IDM equivalence.

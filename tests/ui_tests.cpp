@@ -8,6 +8,10 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QQmlProperty>
+#include <QColor>
+#include <cmath>
+#include <algorithm>
 #include <QJSValue>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -36,6 +40,15 @@ static void collectMessages(QtMsgType type, const QMessageLogContext &context, c
 static bool writeFile(const QString &path, const QByteArray &data) {
     QFile file(path);
     return file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(data) == data.size();
+}
+
+static double contrast(const QColor &foreground, const QColor &background) {
+    auto luminance = [](const QColor &color) {
+        auto channel = [](double value) { return value <= .04045 ? value / 12.92 : std::pow((value + .055) / 1.055, 2.4); };
+        return .2126 * channel(color.redF()) + .7152 * channel(color.greenF()) + .0722 * channel(color.blueF());
+    };
+    const double a = luminance(foreground), b = luminance(background);
+    return (std::max(a, b) + .05) / (std::min(a, b) + .05);
 }
 
 static QObject *withProperty(QObject *root, const char *property, const QVariant &value) {
@@ -99,7 +112,23 @@ private slots:
         QTest::qWait(100);
         QVERIFY(window->grabWindow().save("/tmp/idm-native-empty.png"));
 
-        QTest::keyClick(window, Qt::Key_N, Qt::ControlModifier);
+        auto *emptyState = window->findChild<QQuickItem *>("emptyState");
+        auto *addDownload = window->findChild<QQuickItem *>("addDownloadButton");
+        QVERIFY(emptyState && addDownload);
+        QTRY_VERIFY(emptyState->isVisible());
+        QTRY_VERIFY(addDownload->isVisible() && addDownload->isEnabled());
+        auto *primaryText = addDownload->property("contentItem").value<QQuickItem *>();
+        auto *primaryBackground = addDownload->property("background").value<QQuickItem *>();
+        QVERIFY(primaryText && primaryBackground);
+        QVERIFY(contrast(primaryText->property("color").value<QColor>(), primaryBackground->property("color").value<QColor>()) >= 4.5);
+        addDownload->setProperty("down", true);
+        QVERIFY(contrast(primaryText->property("color").value<QColor>(), primaryBackground->property("color").value<QColor>()) >= 4.5);
+        addDownload->setProperty("down", false);
+        QVERIFY(contrast(window->property("accent").value<QColor>(), window->property("selection").value<QColor>()) >= 4.5);
+        const QRectF headerButton = addDownload->mapRectToScene(addDownload->boundingRect());
+        QVERIFY(headerButton.width() > 0 && headerButton.height() > 0);
+        QVERIFY2(QRectF(0, 0, window->width(), window->height()).contains(headerButton), "The header Add URL button must be visible inside the window.");
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, headerButton.center().toPoint());
         auto *input = window->findChild<QQuickItem *>("urlInput");
         QVERIFY(input);
         QTRY_VERIFY(input->hasActiveFocus());
@@ -131,7 +160,13 @@ private slots:
         QVERIFY(writeFile(colorsPath, "accent = '#39C990'\n"));
         QTRY_COMPARE(theme.accent(), "#39C990");
         QVERIFY(themeChanges.count() > 0);
-        QVERIFY(withProperty(window, "color", QColor("#39C990")));
+        QCOMPARE(window->property("accent").value<QColor>(), QColor("#ef5a00"));
+        QTest::keyClick(window, Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(input->hasActiveFocus());
+        auto *fieldBackground = input->property("background").value<QQuickItem *>();
+        QVERIFY(fieldBackground);
+        QTRY_COMPARE(QQmlProperty(fieldBackground, "border.color").read().value<QColor>(), QColor("#39C990"));
+        QTest::keyClick(window, Qt::Key_Escape);
 
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -196,6 +231,7 @@ private slots:
         QVERIFY(start);
         QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
         QTRY_COMPARE(manager.downloads().size(), 1);
+        QTRY_VERIFY(!emptyState->isVisible());
         QTRY_COMPARE_WITH_TIMEOUT(manager.downloads().first().toMap().value("status").toString(), "complete", 10000);
         QFile downloaded(manager.downloads().first().toMap().value("path").toString());
         QVERIFY(downloaded.open(QIODevice::ReadOnly));
@@ -217,10 +253,20 @@ private slots:
         auto *darkToggle = window->findChild<QQuickItem *>("darkModeToggle");
         QVERIFY(darkToggle);
         QTRY_VERIFY(darkToggle->isVisible());
-        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                          darkToggle->mapToScene(QPointF(darkToggle->width()/2,darkToggle->height()/2)).toPoint());
-        QTRY_VERIFY(window->property("darkMode").toBool());
-        QCOMPARE(window->color(), QColor("#2c2c2c"));
+        const bool initialDarkMode = window->property("darkMode").toBool();
+        QVERIFY(initialDarkMode);
+        const QColor initialCanvas = window->property("canvas").value<QColor>();
+        QCOMPARE(window->color(), initialCanvas);
+        QVERIFY(contrast(window->property("ink").value<QColor>(), initialCanvas) >= 4.5);
+        const auto togglePoint = darkToggle->mapToScene(QPointF(darkToggle->width()/2,darkToggle->height()/2)).toPoint();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, togglePoint);
+        QTRY_COMPARE(window->property("darkMode").toBool(), !initialDarkMode);
+        QTRY_COMPARE(window->color(), window->property("canvas").value<QColor>());
+        QVERIFY(window->color() != initialCanvas);
+        QVERIFY(contrast(window->property("ink").value<QColor>(), window->color()) >= 4.5);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, togglePoint);
+        QTRY_COMPARE(window->property("darkMode").toBool(), initialDarkMode);
+        QTRY_COMPARE(window->color(), initialCanvas);
         QVERIFY(QMetaObject::invokeMethod(options, "close"));
         QTest::qWait(50);
         QVERIFY(window->grabWindow().save("/tmp/idm-classic-dark.png"));
@@ -693,6 +739,7 @@ private slots:
     }
 
     void themeAndLanguageFallbacks() {
+        QCOMPARE(contrast(Qt::white, Qt::black), 21.0);
         QTemporaryDir temporary;
         QVERIFY(temporary.isValid());
         QCOMPARE(Theme::readAccent(temporary.filePath("absent")), "#FFD60A");

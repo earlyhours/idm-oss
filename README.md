@@ -32,7 +32,7 @@ The implementation uses Qt/C++ conventions for Omarchy. The [investigation](docs
 
 Schedules execute while the app is running. Closing it pauses transfers and saves state. Shutdown and network disconnect are opt-in, have a cancelable countdown, and are blocked if scanning fails or other work begins.
 
-English and Danish are included, with locale and RTL fallback. The default interface follows classic IDM's light layout; dark mode is optional. Omarchy accent and language changes update live.
+English and Danish are included, with locale and RTL fallback. The interface keeps IDM's menus, categories and download workflows in a new graphite-and-orange design based on the requested a.yash0.in style. Dark mode is the default; a warm light mode is available. Omarchy language and keyboard-focus accent update live.
 
 | Shortcut | Action |
 | --- | --- |
