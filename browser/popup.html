@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IDM Native</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header><h1>IDM Native</h1><button id="check" type="button">Check connection</button></header>
+<p id="connection" role="status" aria-live="polite">Checking native app…</p>
+<label for="sources">Detected sources / streams</label>
+<select id="sources" size="6" aria-describedby="source-help"></select>
+<p id="source-help">Play the video to detect network streams. For blob-backed players, choose the detected HLS or DASH source.</p>
+<label for="quality">Format / quality</label><select id="quality"><option value="best">Best video + audio</option><option value="1080p">Video up to 1080p</option><option value="720p">Video up to 720p</option><option value="audio">Audio only</option></select>
+<div class="actions"><button id="download" type="button" disabled>Download selected</button><button id="rescan" type="button">Rescan page</button></div>
+<button id="all-links" type="button">Download all page links…</button>
+<p id="batch-summary"></p><button id="confirm-links" type="button" hidden>Send links to IDM</button>
+<fieldset><legend>Browser integration</legend>
+<label class="check"><input id="intercept" type="checkbox"> Automatically hand off browser downloads</label>
+<label for="types">Intercept file types</label><input id="types" type="text" value="*" placeholder="* or zip,pdf,mp4" maxlength="300"><small>Comma-separated extensions, or * for all types.</small>
+<label class="check"><input id="show-panel" type="checkbox" checked> Show “Download this video” on pages</label>
+<label for="position">Video button position</label><select id="position"><option value="right">Bottom right</option><option value="left">Bottom left</option></select>
+<button id="save" type="button">Save preferences</button>
+</fieldset>
+<p id="status" role="status" aria-live="polite"></p>
+<p class="note">Automatic handoff is off by default. If IDM rejects a handoff, the browser download continues. Protected DRM media is unsupported.</p>
+<script src="popup.js"></script>
+</body></html>

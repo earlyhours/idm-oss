@@ -1,0 +1,634 @@
+{
+  "features": [
+    {
+      "id": 1,
+      "name": "Multithreaded Downloading",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 2,
+      "name": "Dynamic File Segmentation",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 3,
+      "name": "Download Acceleration",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 4,
+      "name": "Automatic Browser Integration",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 5,
+      "name": "One-Click Download Capture",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 6,
+      "name": "Video Download Detection",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 7,
+      "name": "Floating Video Download Panel",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 8,
+      "name": "Streaming Video Downloading",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 9,
+      "name": "HLS (M3U8) Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 10,
+      "name": "MPEG-DASH Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 11,
+      "name": "Video Quality Selection",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 12,
+      "name": "Pause and Resume Downloads",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 13,
+      "name": "Interrupted Download Recovery",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 14,
+      "name": "Automatic Download Retry",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 15,
+      "name": "Expired Download Link Refresh",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 16,
+      "name": "Download Scheduling",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 17,
+      "name": "Download Queues",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 18,
+      "name": "Batch Downloading",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 19,
+      "name": "Multiple Simultaneous Downloads",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 20,
+      "name": "Download Speed Limiting",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 21,
+      "name": "Download Priority Management",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 22,
+      "name": "Automatic File Categorization",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 23,
+      "name": "Custom Download Directories",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 24,
+      "name": "Clipboard URL Monitoring",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 25,
+      "name": "Drag-and-Drop Downloads",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 26,
+      "name": "Right-Click Context Menu Integration",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 27,
+      "name": "Download All Links on a Page",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 28,
+      "name": "Website Grabber",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 29,
+      "name": "Recursive Website Downloading",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 30,
+      "name": "Offline Website Mirroring",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 31,
+      "name": "HTTP/HTTPS Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 32,
+      "name": "FTP Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 33,
+      "name": "Proxy Server Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 34,
+      "name": "SOCKS Proxy Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 35,
+      "name": "Authenticated Downloads",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 36,
+      "name": "Browser Cookie Integration",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 37,
+      "name": "HTTP Referer Support",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 38,
+      "name": "Custom HTTP Headers",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 39,
+      "name": "User-Agent Customization",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 40,
+      "name": "Automatic Antivirus Scanning",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 41,
+      "name": "Download Completion Notifications",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 42,
+      "name": "Automatic Shutdown After Downloads",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 43,
+      "name": "Automatic Hang-Up After Downloads",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 44,
+      "name": "Command-Line Integration",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 45,
+      "name": "Download History",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 46,
+      "name": "Download Progress Monitoring",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 47,
+      "name": "Real-Time Download Speed Display",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 48,
+      "name": "Estimated Download Time",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 49,
+      "name": "Multiple Connection Management",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 50,
+      "name": "Connection Timeout Handling",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 51,
+      "name": "Automatic Connection Reuse",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 52,
+      "name": "Speed Limiter Scheduler",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 53,
+      "name": "Download Queue Automation",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 54,
+      "name": "Periodic Website Synchronization",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 55,
+      "name": "Duplicate Download Detection",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 56,
+      "name": "Download File Renaming",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 57,
+      "name": "Download Confirmation Dialog",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 58,
+      "name": "Download Progress Dialog",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 59,
+      "name": "Browser Download Interception",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 60,
+      "name": "Custom File Type Filtering",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 61,
+      "name": "Download Panel Customization",
+      "owner": "browser",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 62,
+      "name": "Multilingual Interface",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 63,
+      "name": "Dark Mode",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 64,
+      "name": "Sound Notifications",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 65,
+      "name": "Keyboard Shortcuts",
+      "owner": "ui",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 66,
+      "name": "Download List Import/Export",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 67,
+      "name": "Automatic Download Start",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 68,
+      "name": "Download Completion Actions",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 69,
+      "name": "Site-Specific Download Settings",
+      "owner": "automation",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    },
+    {
+      "id": 70,
+      "name": "HTTPS Download Support with SSL/TLS",
+      "owner": "engine",
+      "status": "in_progress",
+      "implementation": [],
+      "tests": [],
+      "evidence": ""
+    }
+  ]
+}
