@@ -1,0 +1,20 @@
+name: Checks
+on: [push, pull_request]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install free build tools
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland python
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bin/build
+      - name: Transfer engine
+        run: bin/test
+      - name: Desktop interface
+        run: bin/test-ui
+      - name: Command line
+        run: python tests/cli_test.py
+      - name: Static tooling
+        run: python -m py_compile tools/*.py tests/*.py

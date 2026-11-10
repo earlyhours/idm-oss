@@ -1,0 +1,124 @@
+{
+  "records": [
+    {
+      "target": "IDMan.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_502ef23242ed91c7fb60fc399a5978364a26a27d51bb74386a49cae19fdd8475",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-ghidra/001-binary_overview.json",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 21457,
+        "string_count": 7335
+      }
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_acc6a29fa099893dab4d3c2e092267fdfe372f1f8c3ac9ea496c5016e647aa7e",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-ghidra/024-analyze_function.json",
+      "address": "0x58b2b0",
+      "name": "FUN_0058b2b0",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x58b2b0",
+            "end": "0x58c726"
+          }
+        ],
+        "total_bytes": 5239,
+        "span_bytes": 5239,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_d8f78e6ba474f0940c544253d7bfed2530e80ed9adc360f39293c0a61e5b4254",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/001-binary_overview.json",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 162,
+        "string_count": 152
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_e6e1baccd3a3654b918f775584319cc2e4d619fea9c5edf112b77dbf1fcbeec2",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/004-procedure_pseudo_code.json",
+      "procedure": "0x402830",
+      "pseudocode_characters": 15821
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_066365456f88307f907d5192ceed0a2a240e80913eeaf85e8b6eb0f93de81a36",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/005-procedure_pseudo_code.json",
+      "procedure": "0x403530",
+      "pseudocode_characters": 3145
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_d8f78e6ba474f0940c544253d7bfed2530e80ed9adc360f39293c0a61e5b4254",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/001-binary_overview.json",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 162,
+        "string_count": 152
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_79514ee0cc6b179c435a3f1c892337082a66c81dc03ed304b6105073a4e39d66",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/010-analyze_function.json",
+      "address": "0x403410",
+      "name": "FUN_00403410",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x403410",
+            "end": "0x403494"
+          }
+        ],
+        "total_bytes": 133,
+        "span_bytes": 133,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_8b86f8e18d1835539dcda21feab08e087730075fc4c01884bbbe1d0ce3fe2a69",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/011-analyze_function.json",
+      "address": "0x4034a0",
+      "name": "FUN_004034a0",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x4034a0",
+            "end": "0x40352d"
+          }
+        ],
+        "total_bytes": 142,
+        "span_bytes": 142,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    }
+  ],
+  "limits": [
+    "Native pseudocode is recovered analysis, not original source.",
+    "Local evidence files remain outside Git; rerun the supplied tool against the supplied artifacts to reproduce.",
+    "Main first-pass second full dossier exceeded MCP transport budget; focused pass uses pseudocode-only queries."
+  ]
+}

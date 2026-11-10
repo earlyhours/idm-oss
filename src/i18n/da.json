@@ -1,0 +1,17 @@
+{
+  "Shortcuts": "Genveje", "Downloads folder": "Overførselsmappe",
+  "Downloads": "Overførsler", "All downloads": "Alle overførsler", "In progress": "I gang", "Completed": "Afsluttet",
+  "Add download": "Tilføj overførsel", "Pause all": "Sæt alle på pause", "Pause": "Pause", "Resume": "Fortsæt",
+  "Complete": "Afsluttet", "Paused": "På pause", "Downloading": "Henter", "Connecting": "Opretter forbindelse",
+  "Needs attention": "Kræver opmærksomhed", "Ready when you are.": "Klar, når du er.", "Download URL": "Overførselsadresse",
+  "Save to folder": "Gem i mappe", "Browse": "Gennemse", "Connections": "Forbindelser", "Show file": "Vis fil",
+  "Your files, on the way.": "Dine filer er på vej.", "Saved automatically": "Gemt automatisk",
+  "Close anytime. Resume later.": "Luk når som helst. Fortsæt senere.", "Keyboard shortcuts": "Tastaturgenveje",
+  "Make room for what's next.": "Gør plads til det næste.", "Paste a link. We'll take care of the download.": "Indsæt et link. Vi sørger for overførslen.",
+  "Add your first download": "Tilføj din første overførsel", "Unknown size": "Ukendt størrelse", "Up to 16 connections": "Op til 16 forbindelser",
+  "Choose download folder": "Vælg mappe", "Remove from list": "Fjern fra listen", "Remove download?": "Fjern overførsel?",
+  "Partial data will be removed. Completed files are kept.": "Delvise data fjernes. Afsluttede filer beholdes.",
+  "Parallel transfers require server range support. Existing files are kept safe.": "Parallelle overførsler kræver serverunderstøttelse. Eksisterende filer bevares.",
+  "%1 active transfers": "%1 aktive overførsler",
+  "Ctrl+N    Add download\nSpace     Pause or resume selected\n?             Show shortcuts\nQ             Save queue and quit": "Ctrl+N    Tilføj overførsel\nMellemrum    Pause eller fortsæt\n?             Vis genveje\nQ             Gem og afslut"
+}
