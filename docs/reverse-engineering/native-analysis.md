@@ -47,13 +47,28 @@ The main executable's completed Ghidra inventory reports 21,457 procedure record
 
 Request builder `FUN_0058b2b0`, at `0x58b2b0`, has a 5,239-byte analyzed body ending at `0x58c726`. Recovered pseudocode explicitly formats bounded and open-ended HTTP ranges with 64-bit values. One branch adds a remaining-length value to a starting offset and subtracts one for the inclusive endpoint. Other branches emit a start-only range, an initial range from zero, or no range. The exact meaning of all controlling fields is unknown. This is code-level evidence for part/resume request construction, not a recovered connection-scheduling policy. Its complete first-pass dossier is Evidence `ev_acc6a29fa099893dab4d3c2e092267fdfe372f1f8c3ac9ea496c5016e647aa7e`, retained locally in `~/.cache/idm-analysis/main-ghidra/024-analyze_function.json`.
 
+## Recovered response and captured-header routines
+
+The focused main session completed and exported `~/.cache/idm-analysis/main-focused/evidence-bundle.json` and `analysis-snapshot.json`, then closed the native session. Eight focused pseudocode records across the main executable and native host are indexed with hashes in `native-decompilation-index.json`. These are recovered code observations, not original source.
+
+| Routine | Code-level observation | Evidence |
+|---|---|---|
+| `0x58b2b0` | Constructs bounded and open HTTP ranges from 64-bit offsets. | `ev_f283ff34ff4c5421a63bd7fc7a3b6ba248669b88af4a89d2259f42b5c63461bd` |
+| `0x5adcd0` | A second HTTP request path builds Range headers, request lines, cookies and Digest/proxy authorization fields. The precise caller/method distinction remains unknown. | `ev_9062fd8c861fcccfc5858f81ff7cb5934661246bc2162cc9de485da7b6adaeea` |
+| `0x581cf0` | Decodes Content-Range start/end/total through 64-bit scans, with parse-failure defaults; also recognizes multipart boundaries, chunked transfer, gzip/deflate and Brotli encodings. | `ev_5848c107ab4726966083bb8bd4191e2347be124c55dc24ee838a10a5a9668181` |
+| `0x5827f0` | Extracts 64-bit Content-Length and Content-Range values into caller-provided outputs. | `ev_5d19bc46514bfad56c51fbcde831cb884bad5e98fdb8aea393ed088981886876` |
+| `0x58c770` | Parses Accept-Ranges, distinguishes `none`, parses Content-Range end/total, ETag and Last-Modified fields, and has status-dependent paths including 200/206. | `ev_aa1fc0e8fd69b6f29998d5f427d24115ad7050b663692e1c1b3ef1aab7738fec` |
+| `0x5db150` | Classifies captured headers, extracts cookies/language/origin/range metadata, and returns early for conditional/hop-related headers including If-Range, If-Match and If-None-Match. | `ev_0de970b36c70b79bc623d917b1d965cd005250d4c624f6b93d2e57ece0d91c4a` |
+
+The If-Range result is a useful limit on string-based interpretation. In the routine actually inspected, that header is filtered rather than emitted. Its mere presence must not be cited as proof of IDM's outgoing resume-validator policy. Likewise, parsing Content-Range does not prove that every mismatch is rejected before file writes. Recovered response pseudocode contains terminal-call warnings that can cut paths; the complete validation policy and scheduler still require further tracing and Windows runtime tests.
+
 ## Native-host framing anchor
 
 `IDMMsgHost.exe` contains `MSG#0#17#1#0:9:` at file offset `0x3724`, virtual address `0x404924`. Assembly in the function beginning `0x403530` reserves four bytes, appends this message prefix and a decimal process identity, appends `;`, and at `0x40372f` through `0x403734` stores the payload byte count into those first four bytes. This is direct instruction evidence of a length-prefixed message constructor on little-endian x86. Separate wrappers reference `ReadFile` via IAT `0x404094` and `WriteFile` via `0x404080`; those wrappers alone do not prove full JSON escaping or inbound-frame validation.
 
 Free Ghidra pseudocode of `FUN_00402830`, Evidence `ev_e6e1baccd3a3654b918f775584319cc2e4d619fea9c5edf112b77dbf1fcbeec2`, establishes the bridge path more closely. It obtains stdin and stdout through `GetStdHandle`, derives a Windows session ID, and opens `\\.\pipe\IDMNetworkMonitor.<session-id>` for bidirectional I/O. It uses events, semaphores and worker threads to forward traffic. Its receive loop first accumulates a four-byte size, then the declared payload. Browser-side messages are checked for surrounding quote bytes and sent through a decoding helper; the reverse path calls an encoding helper, adds surrounding quote bytes, and rewrites the four-byte length. These observations support an adapter between browser native-message JSON strings and IDM's internal pipe messages. The complete escaping-helper semantics, maximum frame bounds and every error branch were not independently verified.
 
-`FUN_00403530` pseudocode, Evidence `ev_066365456f88307f907d5192ceed0a2a240e80913eeaf85e8b6eb0f93de81a36`, corroborates the handshake constructor's four-byte length and message prefix. Both complete Evidence records and a session snapshot are retained under `~/.cache/idm-analysis/msg-host-focused/`. The first host overview reports 162 procedure records and 152 defined strings; as with the main executable, this is the provider inventory, not original-source coverage.
+`FUN_00403530` pseudocode, Evidence `ev_066365456f88307f907d5192ceed0a2a240e80913eeaf85e8b6eb0f93de81a36`, corroborates the handshake constructor's four-byte length and message prefix. Ghidra did not define the `MSG#` bytes as a string object in the first search, so the constructor was traced from its known mapped byte address and exact cross-reference instead. Both complete Evidence records and a session snapshot are retained under `~/.cache/idm-analysis/msg-host-focused/`. The first host overview reports 162 procedure records and 152 defined strings; as with the main executable, this is the provider inventory, not original-source coverage.
 
 The host retains a build-path string `X:\Projects\IDMRelease\6.38.20\IDMMsgHost\Release_Win32\IDMMsgHost.pdb`. That is embedded metadata, not a recovered PDB or proof that the installer version is wrong. No PDB is present in the supplied folder.
 
@@ -62,10 +77,25 @@ The host retains a build-path string `X:\Projects\IDMRelease\6.38.20\IDMMsgHost\
 ```sh
 python tools/analyze_idm.py --self-test
 python tools/analyze_idm.py /tmp/idm-extracted-64318 /tmp/native-inventory.json
+
+python tools/ghidra_analysis.py /tmp/idm-extracted-64318/IDMan.exe /tmp/idm-main-analysis-new \
+  --rea /home/yvm/.npm/_npx/af752b90495482d7/node_modules/.bin/rea \
+  --ghidra /home/yvm/.cache/idm-analysis/ghidra_12.1.4_PUBLIC \
+  --java-home /home/yvm/.local/share/mise/installs/java/21 \
+  --function 0x58b2b0 --function 0x5adcd0 --function 0x581cf0 \
+  --function 0x5827f0 --function 0x58c770 --function 0x5db150 --max-functions 6
+
+python tools/ghidra_analysis.py /tmp/idm-extracted-64318/IDMMsgHost.exe /tmp/idm-host-analysis-new \
+  --rea /home/yvm/.npm/_npx/af752b90495482d7/node_modules/.bin/rea \
+  --ghidra /home/yvm/.cache/idm-analysis/ghidra_12.1.4_PUBLIC \
+  --java-home /home/yvm/.local/share/mise/installs/java/21 \
+  --xref 0x404924 --function 0x402830 --function 0x403530 --max-functions 3
 ```
+
+Use a fresh output directory for each invocation. The REA executable path above is the version-pinned installation used in this investigation; pass another existing REA 6.7.0 executable path if its npm cache differs.
 
 Raw GNU objdump imports and disassembly are retained locally under `~/.cache/idm-analysis/`. `tools/ghidra_analysis.py` runs the free REA/Ghidra backend in an isolated process with a 2 GB Java heap and retains exact Evidence records, pseudocode and snapshots outside the repository. Focused pseudocode requests avoid the 10 MB MCP transport limit encountered by a full dossier; complete retained Evidence is exported before closing even if a later query fails. It does not alter the installed REA client configuration or execute the Windows target.
 
 ## Open questions
 
-Original source names/types, the entire connection scheduler, retry/backoff policy, full on-disk IDM queue format, site-specific media parsing, legacy browser behavior and runtime Windows network integration are not established by this inventory. Full original-source reconstruction and behavioral equivalence remain unproven. Publisher signatures were not authenticated.
+Original source names/types, the entire connection scheduler, retry/backoff policy, full on-disk IDM queue format, site-specific media parsing, legacy browser behavior and runtime Windows network integration are not established by this inventory. Full original-source reconstruction and behavioral equivalence remain unproven. Ghidra logged two disassembly failures at `0x450052` and `0x410042` during main-program analysis. Its inferred function boundaries and pseudocode can therefore contain gaps; no whole-program semantic recovery is claimed. Publisher signatures were not authenticated.
