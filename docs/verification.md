@@ -33,7 +33,11 @@ The live Chromium run captured cookie-gated MP4/HLS/DASH, checked playable audio
 
 The aggregate benchmark delivered the same 512 KiB payload in 2682 ms serial versus 709 ms with four workers, approximately 3.78×, on a deliberately paced local fixture. Both outputs matched. This demonstrates that workload's benefit, not an Internet-wide guarantee or a comparison with Windows IDM. A separate keep-alive fixture counted five HTTP requests over four actual TCP connections.
 
-An earlier installation smoke check fetched `https://www.gnu.org/licenses/gpl-3.0.txt` through `/usr/bin/idm-native` and matched an independent curl fetch, SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`. That is historical live-HTTPS evidence, not proof that the latest expanded build has been installed. Current positive and negative TLS tests use the source-built application and private local certificates.
+## Installed application
+
+Version 0.2.0 was rebuilt after the final QML fixes, reinstalled and launched on workspace 5 while preserving the user's active workspace and focus. A native-host ping against the final installed executable passed.
+
+The installed application also fetched `https://www.gnu.org/licenses/gpl-3.0.txt`: 35,149 bytes matched an independent curl fetch, SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`. That HTTPS check preceded the final QML-only rebuild; the backend source was unchanged. Positive and negative TLS fixture tests use the source-built application and private local certificates.
 
 ## Static analysis and limits
 
@@ -46,4 +50,4 @@ Free REA/Ghidra analysis retained pseudocode for six main HTTP/header routines a
 - English and Danish are translated; unsupported locales fall back. Automatic download start means starting accepted work, not launching at login.
 - Portal-response validation is automated, but an actual interactive portal folder-selection session remains unverified. Every filesystem, compositor and long-running real-world workload has not been exercised. Final publication needs hard-link support and temporary assembly space.
 
-TL;DR: the current source passes the complete local suite, including real Chromium capture and authenticated media. The audit records proof for all 70 capability paths within stated limits; this report claims no newly installed package, live public site or rebuilt proprietary IDM.
+TL;DR: the current source passes the local suite, including real Chromium capture, authenticated media and the minimum-window UI checks. Native version 0.2.0 is installed and its browser-host ping passes. The audit records all 70 capability paths within stated limits; it does not claim a live public site or rebuilt proprietary IDM.
