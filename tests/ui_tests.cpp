@@ -1,9 +1,17 @@
 #include <QtTest>
 #include <QFile>
+#include <QDateTime>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QJSValue>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSignalSpy>
@@ -11,6 +19,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include "downloadmanager.h"
+#include "automation.h"
 #include "theme.h"
 #include "portalpicker.h"
 #include "translator.h"
@@ -56,9 +65,16 @@ private slots:
         Translator translator(languagePath);
         qApp->installTranslator(&translator);
         DownloadManager manager(temporary.path() + "/state");
+        QList<QStringList> commands;
+        Automation automation(&manager, temporary.path() + "/state", nullptr,
+                              [&](const QStringList &command, std::function<void(int,const QString &)> done) {
+            commands.append(command); done(0, {});
+        });
+        QVERIFY(automation.configure({{"directory",temporary.path()+"/output"},{"notifications",false},{"sound",false}}));
         PortalPicker picker;
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("picker", &picker);
+        engine.rootContext()->setContextProperty("automation", &automation);
         QStringList warnings;
         connect(&engine, &QQmlEngine::warnings, this, [&](const QList<QQmlError> &errors) {
             for (const auto &error : errors) warnings << error.toString();
@@ -74,7 +90,9 @@ private slots:
         window->requestActivate();
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QTRY_VERIFY(window->isActive());
-        QVERIFY(withProperty(window, "text", "Make room for what's next."));
+        QVERIFY(window->findChild<QObject *>("downloadTable"));
+        QCOMPARE(window->title(), QString("Internet Download Manager"));
+        QVERIFY(withProperty(window, "text", "File Name"));
         QCOMPARE(theme.accent(), "#F8C100");
         QVERIFY2(manager.error().isEmpty(), qPrintable(manager.error()));
         QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join('\n')));
@@ -118,13 +136,24 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray payload("UI transfer fixture\n");
+        int requests = 0;
+        int authorizationChallenges = 0;
+        int basicAttempts = 0;
         connect(&server, &QTcpServer::newConnection, this, [&] {
             while (auto *socket = server.nextPendingConnection()) {
                 connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
-                connect(socket, &QTcpSocket::readyRead, socket, [socket, payload] {
+                connect(socket, &QTcpSocket::readyRead, socket, [socket, payload, &requests, &authorizationChallenges, &basicAttempts] {
                     auto request = socket->property("request").toByteArray() + socket->readAll();
                     socket->setProperty("request", request);
                     if (!request.contains("\r\n\r\n")) return;
+                    ++requests;
+                    if (request.toLower().contains("authorization:")) ++basicAttempts;
+                    if (request.startsWith("GET /auth.bin ") && !request.contains("Basic dXNlcjpwYXNz")) {
+                        ++authorizationChallenges;
+                        socket->write("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Fixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        socket->disconnectFromHost();
+                        return;
+                    }
                     const bool head = request.startsWith("HEAD ");
                     socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(payload.size())
                                   + "\r\nConnection: close\r\n\r\n" + (head ? QByteArray() : payload));
@@ -136,23 +165,296 @@ private slots:
         QTRY_VERIFY(input->hasActiveFocus());
         const auto url = QString("http://127.0.0.1:%1/ui.bin").arg(server.serverPort());
         input->setProperty("text", url);
-        auto *directory = withProperty(window, "placeholderText", "Save to folder");
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-url.png"));
+        QTest::keyClick(window, Qt::Key_Return);
+        auto *information = window->findChild<QObject *>("infoDialog");
+        QVERIFY(information);
+        QTRY_VERIFY(information->property("visible").toBool());
+        auto *directory = window->findChild<QObject *>("directoryInput");
         QVERIFY(directory);
         directory->setProperty("text", temporary.path() + "/output");
-        QTest::keyClick(window, Qt::Key_Return);
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-info.png"));
+        auto *start = window->findChild<QObject *>("startDownloadButton");
+        QVERIFY(start);
+        QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
         QTRY_COMPARE(manager.downloads().size(), 1);
         QTRY_COMPARE_WITH_TIMEOUT(manager.downloads().first().toMap().value("status").toString(), "complete", 10000);
         QFile downloaded(manager.downloads().first().toMap().value("path").toString());
         QVERIFY(downloaded.open(QIODevice::ReadOnly));
         QCOMPARE(downloaded.readAll(), payload);
         QTRY_VERIFY(withProperty(window, "text", "ui.bin"));
+        auto *transfer = window->findChild<QObject *>("transferDialog");
+        QVERIFY(transfer);
+        QTRY_VERIFY(transfer->property("visible").toBool());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-transfer.png"));
+        QVERIFY(QMetaObject::invokeMethod(transfer, "close"));
         QVERIFY(writeFile(colorsPath, "accent = '#FFD60A'\n"));
         QTRY_COMPARE(theme.accent(), "#FFD60A");
         QTest::qWait(100);
         QVERIFY(window->grabWindow().save("/tmp/idm-native-download.png"));
+        auto *options = window->findChild<QObject *>("optionsDialog");
+        QVERIFY(options);
+        QVERIFY(QMetaObject::invokeMethod(options, "open"));
+        auto *darkToggle = window->findChild<QQuickItem *>("darkModeToggle");
+        QVERIFY(darkToggle);
+        QTRY_VERIFY(darkToggle->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                          darkToggle->mapToScene(QPointF(darkToggle->width()/2,darkToggle->height()/2)).toPoint());
+        QTRY_VERIFY(window->property("darkMode").toBool());
+        QCOMPARE(window->color(), QColor("#2c2c2c"));
+        QVERIFY(QMetaObject::invokeMethod(options, "close"));
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-dark.png"));
+        window->setProperty("darkMode", false);
+        QMimeData mime;
+        mime.setUrls({QUrl("https://example.test/one.zip"),QUrl("file:///etc/passwd"),QUrl("https://example.test/two.zip")});
+        QDragEnterEvent enter(QPointF(400,300), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &enter);
+        QDropEvent drop(QPointF(400,300), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &drop);
+        auto *urlDialog = window->findChild<QObject *>("urlDialog");
+        QVERIFY(urlDialog);
+        QTRY_VERIFY(urlDialog->property("visible").toBool());
+        QCOMPARE(input->property("text").toString(), "https://example.test/one.zip");
+        QCOMPARE(window->property("droppedUrls").value<QJSValue>().toVariant().toList().size(), 1);
+        QCOMPARE(manager.downloads().size(), 1);
+        QTest::keyClick(window, Qt::Key_Escape);
+        const int beforeLater = requests;
+        QTest::keyClick(window, Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(input->hasActiveFocus());
+        input->setProperty("text", QString("http://127.0.0.1:%1/later.zip").arg(server.serverPort()));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(information->property("visible").toBool());
+        directory->setProperty("text", temporary.path() + "/output");
+        window->findChild<QObject *>("descriptionInput")->setProperty("text", "Queued from file information dialog");
+        auto *later = window->findChild<QObject *>("downloadLaterButton");
+        QVERIFY(later);
+        QVERIFY(QMetaObject::invokeMethod(later, "clicked"));
+        QTRY_COMPARE(manager.downloads().size(), 2);
+        QCOMPARE(manager.downloads().last().toMap().value("status").toString(), "paused");
+        QCOMPARE(manager.downloads().last().toMap().value("description").toString(), "Queued from file information dialog");
+        QTest::qWait(50);
+        QCOMPARE(requests, beforeLater);
+        QTRY_VERIFY(withProperty(window, "text", "later.zip"));
+        auto *table = window->findChild<QQuickItem *>("downloadTable");
+        QVERIFY(table);
+        auto *label = qobject_cast<QQuickItem *>(withProperty(table, "text", "later.zip"));
+        QVERIFY(label);
+        const QPoint rowPoint = label->mapToScene(QPointF(label->width()/2,label->height()/2)).toPoint();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, rowPoint);
+        QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, rowPoint);
+        QTRY_VERIFY(transfer->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(transfer, "close"));
+        auto *startQueue = window->findChild<QObject *>("startQueueButton");
+        QVERIFY(startQueue);
+        QVERIFY(QMetaObject::invokeMethod(startQueue, "clicked"));
+        QTRY_COMPARE_WITH_TIMEOUT(manager.downloads().last().toMap().value("status").toString(), "complete", 10000);
+        const auto queuedPath = manager.downloads().last().toMap().value("path").toString();
+        QTest::keyClick(window, Qt::Key_Delete);
+        auto *remove = window->findChild<QObject *>("removeDialog");
+        QVERIFY(remove);
+        QTRY_VERIFY(remove->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(remove, "accept"));
+        QTRY_COMPARE(manager.downloads().size(), 1);
+        QVERIFY(QFile::exists(queuedPath));
+        auto *deleteCompleted = window->findChild<QObject *>("deleteCompletedButton");
+        QVERIFY(deleteCompleted);
+        QVERIFY(QMetaObject::invokeMethod(deleteCompleted, "clicked"));
+        QTRY_VERIFY(manager.downloads().isEmpty());
+        QVERIFY(QFile::exists(downloaded.fileName()));
+        QTest::keyClick(window, Qt::Key_N, Qt::ControlModifier);
+        QTRY_VERIFY(input->hasActiveFocus());
+        input->setProperty("text",QString("http://127.0.0.1:%1/auth.bin").arg(server.serverPort()));
+        window->findChild<QObject *>("useAuthorization")->setProperty("checked",true);
+        window->findChild<QObject *>("loginInput")->setProperty("text","user");
+        window->findChild<QObject *>("passwordInput")->setProperty("text","pass");
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(information->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(start,"clicked"));
+        QTRY_COMPARE(manager.downloads().size(),1);
+        QFile savedQueue(temporary.path()+"/state/queue.json");
+        QVERIFY(savedQueue.open(QIODevice::ReadOnly));
+        const auto saved=QJsonDocument::fromJson(savedQueue.readAll()).object().value("downloads").toArray().first().toObject();
+        QCOMPARE(saved.value("username").toString(),"user");
+        QCOMPARE(saved.value("password").toString(),"pass");
+        QTRY_VERIFY_WITH_TIMEOUT(manager.downloads().first().toMap().value("status").toString()=="complete" || manager.downloads().first().toMap().value("status").toString()=="error",10000);
+        QVERIFY2(manager.downloads().first().toMap().value("status").toString()=="complete",qPrintable(manager.downloads().first().toMap().value("error").toString()+QString("; challenges=%1, credential attempts=%2").arg(authorizationChallenges).arg(basicAttempts)));
+        QVERIFY(authorizationChallenges > 0);
+        QFile authenticated(manager.downloads().first().toMap().value("path").toString());
+        QVERIFY(authenticated.open(QIODevice::ReadOnly));
+        QCOMPARE(authenticated.readAll(),payload);
+        QVERIFY(window->findChild<QObject *>("passwordInput")->property("text").toString().isEmpty());
         QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join('\n')));
         QVERIFY2(qmlWarnings.isEmpty(), qPrintable(qmlWarnings.join('\n')));
         qApp->removeTranslator(&translator);
+    }
+
+    void automationDialogsAndPolicies() {
+        qmlWarnings.clear();
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        QVERIFY(writeFile(temporary.filePath("language"), "en\n"));
+        Theme theme(temporary.path());
+        Translator translator(temporary.filePath("language"));
+        DownloadManager manager(temporary.filePath("state"));
+        QList<QStringList> commands;
+        Automation automation(&manager, temporary.filePath("state"), nullptr,
+                              [&](const QStringList &command, std::function<void(int,const QString &)> done) {
+            commands.append(command); done(0, {});
+        });
+        QVERIFY(automation.configure({{"notifications",false},{"sound",false}}));
+        PortalPicker picker;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("picker", &picker);
+        engine.rootContext()->setContextProperty("automation", &automation);
+        engine.rootContext()->setContextProperty("backend", &manager);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.load(QUrl("qrc:/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_VERIFY(window->isActive());
+        auto *options=window->findChild<QObject *>("optionsDialog");
+        QVERIFY(options);
+        QVERIFY(QMetaObject::invokeMethod(options,"open"));
+        auto *directory=window->findChild<QObject *>("defaultsDirectory");
+        auto *concurrency=window->findChild<QObject *>("concurrentInput");
+        auto *rate=window->findChild<QObject *>("rateInput");
+        auto *saveOptions=window->findChild<QObject *>("saveOptionsButton");
+        QVERIFY(directory && concurrency && rate && saveOptions);
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-options.png"));
+        directory->setProperty("text",temporary.filePath("downloads"));
+        concurrency->setProperty("value",7);
+        rate->setProperty("text","1024");
+        QVERIFY(QMetaObject::invokeMethod(saveOptions,"clicked"));
+        QTRY_VERIFY(!options->property("visible").toBool());
+        QCOMPARE(automation.preferences().value("directory").toString(),temporary.filePath("downloads"));
+        QCOMPARE(automation.preferences().value("maxConcurrent").toInt(),7);
+        QCOMPARE(automation.preferences().value("rateLimit").toInt(),1024);
+        QVERIFY(QFile::exists(temporary.filePath("state/automation.json")));
+
+        auto *scheduler=window->findChild<QObject *>("schedulerDialog");
+        QVERIFY(scheduler);
+        QVERIFY(QMetaObject::invokeMethod(scheduler,"open"));
+        auto *queueName=window->findChild<QObject *>("queueName");
+        auto *queueConcurrency=window->findChild<QObject *>("queueConcurrent");
+        auto *queueStart=window->findChild<QObject *>("queueStart");
+        auto *saveQueue=window->findChild<QObject *>("saveQueueButton");
+        QVERIFY(queueName && queueConcurrency && queueStart && saveQueue);
+        queueName->setProperty("editText","Nightly");
+        queueConcurrency->setProperty("value",2);
+        const auto nextYear=QDateTime::currentDateTime().addYears(1).toString(Qt::ISODate);
+        queueStart->setProperty("text",nextYear);
+        QVERIFY(QMetaObject::invokeMethod(saveQueue,"clicked"));
+        QTRY_VERIFY(!scheduler->property("visible").toBool());
+        QVariantMap nightly;
+        for(const auto &item:automation.queues())if(item.toMap().value("name")=="Nightly")nightly=item.toMap();
+        QCOMPARE(nightly.value("concurrent").toInt(),2);
+        QCOMPARE(QDateTime::fromString(nightly.value("startAt").toString(),Qt::ISODate).toSecsSinceEpoch(),QDateTime::fromString(nextYear,Qt::ISODate).toSecsSinceEpoch());
+        QVERIFY(QMetaObject::invokeMethod(scheduler,"open"));
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-classic-scheduler.png"));
+        QVERIFY(QMetaObject::invokeMethod(scheduler,"close"));
+
+        const auto id=automation.enqueue({{"url","http://127.0.0.1:9/queued.bin"},{"start",false}});
+        QVERIFY(!id.isEmpty());
+        window->setProperty("selectedId",id);
+        auto *policy=window->findChild<QObject *>("policyDialog");
+        QVERIFY(policy);
+        QVERIFY(QMetaObject::invokeMethod(policy,"open"));
+        window->findChild<QObject *>("jobQueue")->setProperty("editText","Nightly");
+        window->findChild<QObject *>("jobPriority")->setProperty("currentIndex",1);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject *>("savePolicyButton"),"clicked"));
+        QTRY_VERIFY(!policy->property("visible").toBool());
+        QCOMPARE(automation.jobPolicies().value(id).toMap().value("queue").toString(),"Nightly");
+        QCOMPARE(automation.jobPolicies().value(id).toMap().value("priority").toInt(),10);
+        auto *edit=window->findChild<QObject *>("editDialog");
+        QVERIFY(edit);
+        edit->setProperty("renaming",true);
+        QVERIFY(QMetaObject::invokeMethod(edit,"open"));
+        window->findChild<QObject *>("editValue")->setProperty("text","renamed.bin");
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject *>("saveEditButton"),"clicked"));
+        QTRY_VERIFY(!edit->property("visible").toBool());
+        QCOMPARE(manager.downloads().first().toMap().value("name").toString(),"renamed.bin");
+        edit->setProperty("renaming",false);
+        QVERIFY(QMetaObject::invokeMethod(edit,"open"));
+        window->findChild<QObject *>("editValue")->setProperty("text","http://127.0.0.1:9/refreshed.bin");
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject *>("saveEditButton"),"clicked"));
+        QTRY_VERIFY(!edit->property("visible").toBool());
+        QCOMPARE(manager.downloads().first().toMap().value("url").toString(),"http://127.0.0.1:9/refreshed.bin");
+        automation.pauseAll();
+        QCOMPARE(manager.downloads().first().toMap().value("status").toString(),"paused");
+        window->setProperty("filter","queue:Nightly");
+        QTRY_VERIFY(withProperty(window->findChild<QObject *>("downloadTable"),"text","renamed.bin"));
+
+        auto *list=window->findChild<QObject *>("listDialog");
+        QVERIFY(list);
+        list->setProperty("importing",false);
+        QVERIFY(QMetaObject::invokeMethod(list,"open"));
+        const auto exportPath=temporary.filePath("list.json");
+        window->findChild<QObject *>("listPath")->setProperty("text",exportPath);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject *>("listSubmitButton"),"clicked"));
+        QTRY_VERIFY(!list->property("visible").toBool());
+        QFile exported(exportPath);
+        QVERIFY(exported.open(QIODevice::ReadOnly));
+        const auto content=exported.readAll();
+        QVERIFY(content.contains("renamed.bin"));
+        QVERIFY(!content.contains("Cookie"));
+        const auto importPath=temporary.filePath("imports.txt");
+        QVERIFY(writeFile(importPath,"http://127.0.0.1:9/imported.zip\n"));
+        list->setProperty("importing",true);
+        QVERIFY(QMetaObject::invokeMethod(list,"open"));
+        window->findChild<QObject *>("listPath")->setProperty("text",importPath);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject *>("listSubmitButton"),"clicked"));
+        QTRY_COMPARE(manager.downloads().size(),2);
+        automation.pauseAll();
+        QTcpServer website;
+        QVERIFY(website.listen(QHostAddress::LocalHost));
+        const QByteArray html("<html><head><title>UI site fixture</title></head><body>Website copied through the dialog</body></html>");
+        connect(&website,&QTcpServer::newConnection,this,[&] {
+            while(auto *socket=website.nextPendingConnection()) {
+                connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);
+                connect(socket,&QTcpSocket::readyRead,socket,[socket,html] {
+                    const auto request=socket->property("request").toByteArray()+socket->readAll();
+                    socket->setProperty("request",request);
+                    if(!request.contains("\r\n\r\n"))return;
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: "+QByteArray::number(html.size())+"\r\nConnection: close\r\n\r\n"+html);
+                    socket->disconnectFromHost();
+                });
+            }
+        });
+        auto *grabber=window->findChild<QObject *>("grabberDialog");
+        QVERIFY(grabber);
+        QVERIFY(QMetaObject::invokeMethod(grabber,"open"));
+        auto *grabberUrl=window->findChild<QObject *>("grabberUrl");
+        auto *grabberDirectory=window->findChild<QObject *>("grabberDirectory");
+        auto *grabberStart=window->findChild<QObject *>("grabberStartButton");
+        QVERIFY(grabberUrl && grabberDirectory && grabberStart);
+        grabberDirectory->setProperty("text",temporary.filePath("website"));
+        grabberUrl->setProperty("text","file:///etc/passwd");
+        QVERIFY(QMetaObject::invokeMethod(grabberStart,"clicked"));
+        QVERIFY(!automation.error().isEmpty());
+        grabberUrl->setProperty("text",QString("http://127.0.0.1:%1/").arg(website.serverPort()));
+        QVERIFY(QMetaObject::invokeMethod(grabberStart,"clicked"));
+        QTRY_COMPARE_WITH_TIMEOUT(automation.grabber().value("status").toString(),"complete",15000);
+        QFile copied(temporary.filePath("website/index.html"));
+        QVERIFY(copied.open(QIODevice::ReadOnly));
+        QVERIFY(copied.readAll().contains("Website copied through the dialog"));
+        QVERIFY(QMetaObject::invokeMethod(grabber,"close"));
+        QVERIFY(QMetaObject::invokeMethod(&automation,"clipboardUrl",Q_ARG(QString,QString("https://example.test/from-clipboard.zip"))));
+        auto *urlDialog=window->findChild<QObject *>("urlDialog");
+        QTRY_VERIFY(urlDialog->property("visible").toBool());
+        QCOMPARE(window->findChild<QObject *>("urlInput")->property("text").toString(),"https://example.test/from-clipboard.zip");
+        QTest::keyClick(window,Qt::Key_Escape);
+        QVERIFY(commands.isEmpty());
+        QVERIFY2(qmlWarnings.isEmpty(),qPrintable(qmlWarnings.join('\n')));
     }
 
     void portalResponsesValidateLocalFolders() {
@@ -195,7 +497,7 @@ private slots:
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     previousHandler = qInstallMessageHandler(collectMessages);
-    QQuickStyle::setStyle("Material");
+    QQuickStyle::setStyle("Basic");
     UiTests tests;
     const int result = QTest::qExec(&tests, argc, argv);
     qInstallMessageHandler(previousHandler);

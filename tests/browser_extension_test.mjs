@@ -101,6 +101,13 @@ test('automatic interception defaults off and never cancels before native accept
   assert.deepEqual(w.cancellations,[44]);
 });
 
+test('manifest interception uses media capture even without a useful MIME type',async()=>{
+  const w=worker();await w.message({type:'settings',intercept:true,tabId:7});
+  await w.api.downloads.onCreated.listeners[0]({id:91,url:'https://files.test/stream.m3u8',mime:'application/octet-stream'});
+  assert.equal(w.nativeCalls[0].message.request.media,true);
+  assert.deepEqual(w.cancellations,[91]);
+});
+
 test('failed native handoff and malformed acceptance leave browser download running',async()=>{
   for(const outcome of [{ok:false,error:'Disk full'},{ok:true}]){
     const w=worker();await w.message({type:'settings',intercept:true,tabId:7});

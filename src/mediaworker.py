@@ -8,6 +8,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
+import base64
 
 
 def emit(**frame):
@@ -39,6 +41,8 @@ def run(config):
 
     source_origin = origin(config["url"])
     context = config.get("headers", {})
+    if config.get("username") and not context.get("authorization"):
+        context["authorization"] = "Basic " + base64.b64encode((config["username"] + ":" + config.get("password", "")).encode()).decode()
 
     class Redirects(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, request, response, code, message, headers, newurl):
@@ -50,7 +54,20 @@ def run(config):
                 redirected.unredirected_hdrs.clear()
             return redirected
 
-    opener = urllib.request.build_opener(Redirects())
+    proxy = config.get("proxy", {})
+    proxy_handler = urllib.request.ProxyHandler()
+    if proxy:
+        if proxy.get("type") != "http":
+            raise ValueError("Unsupported media proxy")
+        host = proxy["host"]
+        if ":" in host:
+            host = "[" + host + "]"
+        credentials = ""
+        if proxy.get("username"):
+            credentials = urllib.parse.quote(proxy["username"], safe="") + ":" + urllib.parse.quote(proxy.get("password", ""), safe="") + "@"
+        address = "http://" + credentials + host + ":" + str(proxy["port"])
+        proxy_handler = urllib.request.ProxyHandler({"http": address, "https": address})
+    opener = urllib.request.build_opener(proxy_handler, Redirects())
 
     class ScopedYoutubeDL(yt_dlp.YoutubeDL):
         def urlopen(self, request):
@@ -96,7 +113,8 @@ def run(config):
     options = {
         "quiet": True, "no_warnings": True, "logger": QuietLogger(),
         "noplaylist": True, "cachedir": False, "continuedl": False, "overwrites": False,
-        "outtmpl": str(work / "capture.%(ext)s"), "socket_timeout": 30,
+        "outtmpl": str(work / "capture.%(ext)s"), "socket_timeout": int(config.get("timeoutSeconds", 30)),
+        "ratelimit": int(config.get("rateLimitBytes", 0)) or None,
         "concurrent_fragment_downloads": min(16, max(1, int(config.get("connections", 4)))),
         "external_downloader": "native", "hls_prefer_native": True,
         "format": {"best": "bestvideo+bestaudio/best", "1080p": "bestvideo[height<=?1080]+bestaudio/best[height<=?1080]", "720p": "bestvideo[height<=?720]+bestaudio/best[height<=?720]", "audio": "bestaudio/best"}[config.get("format") or "best"],
@@ -136,6 +154,55 @@ def run(config):
     emit(type="complete", path=str(output), bytes=output.stat().st_size, duration=duration, streams=streams)
 
 
+def run_ftp(config):
+    parts = urllib.parse.urlsplit(config["url"])
+    if parts.scheme not in ("ftp", "ftps") or not parts.hostname or parts.username or parts.password or any(ord(c) < 32 for c in urllib.parse.unquote(parts.path)):
+        raise ValueError("Invalid FTP URL")
+    work = Path(config["directory"]).resolve(strict=True)
+    output = work / "verified.bin"
+    if output.is_symlink():
+        raise ValueError("Unsafe FTP output")
+    output.unlink(missing_ok=True)
+
+    def quote(value):
+        return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+    settings = ["silent", "show-error", "fail", 'proto = "=ftp,ftps"', 'ftp-method = "nocwd"',
+                "url = " + quote(config["url"]), "output = " + quote(output),
+                "connect-timeout = " + str(int(config.get("timeoutSeconds", 30))),
+                "speed-time = " + str(int(config.get("timeoutSeconds", 30))), 'speed-limit = "1"', 'write-out = "%{json}"']
+    if config.get("username"):
+        settings.append("user = " + quote(config["username"] + ":" + config.get("password", "")))
+    rate = int(config.get("rateLimitBytes", 0))
+    if rate:
+        settings.append("limit-rate = " + str(rate))
+    proxy = config.get("proxy", {})
+    if proxy:
+        host = proxy["host"]
+        if ":" in host:
+            host = "[" + host + "]"
+        settings += ["proxy = " + quote(("socks5h" if proxy["type"] == "socks5" else "http") + "://" + host + ":" + str(proxy["port"])), 'noproxy = ""']
+        if proxy["type"] == "http":
+            settings.append("proxytunnel")
+        if proxy.get("username"):
+            settings.append("proxy-user = " + quote(proxy["username"] + ":" + proxy.get("password", "")))
+    process = subprocess.Popen([config["curl"], "--config", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    process.stdin.write(("\n".join(settings) + "\n").encode())
+    process.stdin.close()
+    started = time.monotonic()
+    while process.poll() is None:
+        size = output.stat().st_size if output.exists() else 0
+        emit(type="progress", received=size, total=-1, speed=size / max(.001, time.monotonic() - started), eta=-1)
+        time.sleep(.1)
+    metadata = process.stdout.read()
+    if process.returncode != 0 or not output.is_file():
+        raise ValueError("FTP transfer failed")
+    metadata = json.loads(metadata)
+    if output.stat().st_size != int(metadata.get("size_download", -1)):
+        raise ValueError("FTP size mismatch")
+    emit(type="complete", path=str(output), bytes=output.stat().st_size)
+
+
 def main():
     os.umask(0o077)
     os.setsid()
@@ -147,13 +214,16 @@ def main():
     signal.signal(signal.SIGTERM, terminate)
     try:
         config = json.load(sys.stdin)
-        run(config)
+        if config.get("kind") == "ftp":
+            run_ftp(config)
+        else:
+            run(config)
     except ImportError:
         emit(type="error", error="The system Python cannot load yt-dlp. Install the free yt-dlp package.")
         return 1
     except Exception:
         # Exceptions can embed signed media URLs, cookies, or authorization. Keep them private.
-        emit(type="error", error="Media capture failed. The source is unavailable, needs different authorization, or uses an unsupported media format.")
+        emit(type="error", error="FTP transfer failed. Check the server, credentials, proxy and available disk space." if config.get("kind") == "ftp" else "Media capture failed. The source is unavailable, needs different authorization, or uses an unsupported media format.")
         return 1
     return 0
 

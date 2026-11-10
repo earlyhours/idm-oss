@@ -1,0 +1,9 @@
+{
+    "bytes": 524288,
+    "fixture": "512KiB at 2048 bytes per connection every 5ms",
+    "parallel4Ms": 705,
+    "parallelTcpConnections": 5,
+    "ratio": 3.8156028368794326,
+    "serialMs": 2690,
+    "serialTcpConnections": 2
+}

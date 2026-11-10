@@ -10,3 +10,6 @@ RESOURCES += ../src/resources.qrc
 
 HEADERS += ../src/portalpicker.h
 SOURCES += ../src/portalpicker.cpp
+
+HEADERS += ../src/automation.h
+SOURCES += ../src/automation.cpp

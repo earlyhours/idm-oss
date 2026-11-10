@@ -25,6 +25,9 @@ public:
     Q_INVOKABLE void pauseAll();
     Q_INVOKABLE void resumeAll();
     Q_INVOKABLE void removeCompleted();
+    Q_INVOKABLE void setRateLimit(const QString &id, qint64 bytesPerSecond);
+    Q_INVOKABLE bool rename(const QString &id, const QString &filename);
+    Q_INVOKABLE bool refresh(const QString &id, const QString &url);
 signals:
     void changed();
 private:

@@ -206,7 +206,7 @@
     }
     const tab = await getTab(tabId);
     try {
-      await handoff(tabId, { url, media: mediaMime(item.mime), pageUrl: item.referrer }, tab);
+      await handoff(tabId, { url, media: mediaMime(item.mime) || mediaPattern.test(url), pageUrl: item.referrer }, tab);
       chrome.downloads.cancel(item.id, () => {
         if (chrome.runtime.lastError) setStatus(tabId, 'IDM accepted the download, but the browser download could not be stopped. Check both downloads.', true);
       });
@@ -225,7 +225,8 @@
     if (sender.id !== chrome.runtime.id || !message || typeof message !== 'object') {
       respond({ ok: false, error: 'Invalid extension message' }); return false;
     }
-    const tabId = sender.tab?.id ?? message.tabId;
+    const internal = !sender.tab || (typeof sender.url === 'string' && sender.url.startsWith(chrome.runtime.getURL('')));
+    const tabId = internal ? message.tabId : sender.tab?.id;
     const state = tabState(tabId);
     if (sender.tab && state) {
       state.pageUrl = httpUrl(sender.tab.url); state.title = (sender.tab.title || '').slice(0, 300);
@@ -240,7 +241,7 @@
       }
       respond(view(tabId)); return false;
     }
-    if (message.type === 'settings' && !sender.tab && typeof message.intercept === 'boolean') {
+    if (message.type === 'settings' && internal && typeof message.intercept === 'boolean') {
       const types = typeof message.interceptTypes === 'string' ? message.interceptTypes.toLowerCase().replace(/\s/g,'').replace(/\./g,'') : interceptTypes;
       if (types !== '*' && (!/^[a-z0-9]{1,12}(?:,[a-z0-9]{1,12}){0,31}$/.test(types))) {respond({ok:false,error:'Enter * or up to 32 comma-separated file extensions'});return false;}
       if (message.showPanel !== undefined && typeof message.showPanel !== 'boolean') {respond({ok:false,error:'Invalid panel preference'});return false;}
@@ -255,11 +256,11 @@
       });
       return true;
     }
-    if (message.type === 'batch' && !sender.tab) {
+    if (message.type === 'batch' && internal) {
       getTab(tabId).then(tab => batch(tabId,message,tab)).then(respond).catch(error => {setStatus(tabId,error.message,true);respond({ok:false,error:error.message});});
       return true;
     }
-    if (message.type === 'ping' && !sender.tab) {
+    if (message.type === 'ping' && internal) {
       native({ command: 'ping' }).then(respond).catch(error => respond({ ok: false, error: error.message })); return true;
     }
     if (message.type === 'download') {

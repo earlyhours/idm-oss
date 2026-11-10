@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Exercise the real website worker against isolated local HTTP servers."""
+import hashlib
+import gzip
+import fcntl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from urllib.parse import urlsplit
+
+WORKER = Path(__file__).resolve().parents[1] / 'tools' / 'website_worker.py'
+
+
+class WebsiteTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.output = self.root / 'site'
+        self.requests = []
+        self.external_requests = []
+        self.version = 1
+        owner = self
+
+        class External(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_GET(self):
+                owner.external_requests.append(self.path)
+                self.send_response(200); self.end_headers(); self.wfile.write(b'outside')
+        self.external = ThreadingHTTPServer(('127.0.0.1', 0), External)
+        self.external_url = f'http://127.0.0.1:{self.external.server_port}'
+
+        class Site(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_GET(self):
+                owner.requests.append((self.path, dict(self.headers)))
+                route = urlsplit(self.path).path
+                if route in ('/jump', '/external-jump'):
+                    self.send_response(302)
+                    self.send_header('Location', '/index' if route == '/jump' else owner.external_url + '/secret')
+                    self.end_headers(); return
+                if route == '/missing':
+                    self.send_response(503); self.end_headers(); return
+                if route in ('/index', '/failed', '/plain', '/gzip', '/bomb'):
+                    broken = '<a href="/missing">Broken</a>' if route == '/failed' else ''
+                    body = f'''<!doctype html><html><head><title>Generation {owner.version}</title>
+<link rel="stylesheet" href="/styles/main.css"><style>.inline{{background:url('/img/inline.png')}}</style></head>
+<body><h1>Generation {owner.version}</h1><a href="/page">Next</a><a href="/index">Cycle</a>
+<a href="/query?id=one">One</a><a href="/query?id=two">Two</a><img src="/img/photo.png">
+<img srcset="data:image/png;base64,AAAA 1x, /img/photo.png?size=2 2x">
+<img style="background-image:url('/img/attribute.png')" src="{owner.external_url}/external.png">
+<a href="#anchor">Anchor</a><a href="javascript:alert(1)">JS</a><a href="file:///etc/passwd">File</a>
+{broken}<p id="anchor">End</p></body></html>'''.encode()
+                    mime = 'text/plain' if route == '/plain' else 'text/html; charset=utf-8'
+                    etag = f'"index-{owner.version}-{route}"'
+                elif route == '/page':
+                    body = b'<html><head></head><body><a href="/index">Back</a><a href="/deep">Deep</a><img src="/img/photo.png"></body></html>'
+                    mime, etag = 'text/html', '"page-1"'
+                elif route == '/deep':
+                    body, mime, etag = b'<html><body>Deep page</body></html>', 'text/html', '"deep"'
+                elif route == '/query':
+                    body, mime, etag = ('<html><body>' + self.path + '</body></html>').encode(), 'text/html', '"' + self.path + '"'
+                elif route == '/styles/main.css':
+                    body = b'@import "more.css"; .hero{background:url("../img/bg.png")} .data{background:url(data:image/png;base64,AAAA)}'
+                    mime, etag = 'text/css; charset=utf-8', ''
+                elif route == '/styles/more.css':
+                    body, mime, etag = b'.more{background:url(/img/more.png)}', 'text/css', '"more"'
+                elif route.startswith('/img/'):
+                    body, mime, etag = ('PNG fixture ' + self.path).encode(), 'image/png', '"' + self.path + '"'
+                else:
+                    self.send_response(404); self.end_headers(); return
+                compressed = route in ('/gzip', '/bomb')
+                if route == '/bomb': body = b'<html><body>' + b'x' * 100000 + b'</body></html>'
+                if compressed: body = gzip.compress(body)
+                modified = 'Mon, 01 Jun 2026 00:00:00 GMT'
+                if (etag and self.headers.get('If-None-Match') == etag) or (not etag and self.headers.get('If-Modified-Since') == modified):
+                    self.send_response(304); self.end_headers(); return
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(body)))
+                if compressed: self.send_header('Content-Encoding', 'gzip')
+                self.send_header('Last-Modified', modified)
+                if etag: self.send_header('ETag', etag)
+                self.end_headers(); self.wfile.write(body)
+        self.site = ThreadingHTTPServer(('127.0.0.1', 0), Site)
+        self.url = f'http://127.0.0.1:{self.site.server_port}'
+        for server in (self.site, self.external):
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+
+    def tearDown(self):
+        for server in (self.site, self.external): server.shutdown(); server.server_close()
+        self.temp.cleanup()
+
+    def run_worker(self, path='/index', **extra):
+        job = {'url': self.url + path, 'directory': str(self.output), 'depth': 2, 'maxFiles': 40, 'maxBytes': 1000000, **extra}
+        file = self.root / 'job.json'; file.write_text(json.dumps(job)); file.chmod(0o600)
+        process = subprocess.run([sys.executable, str(WORKER), str(file)], text=True, capture_output=True, timeout=20)
+        self.assertFalse(process.stderr, process.stderr)
+        rows = [json.loads(line) for line in process.stdout.splitlines()]
+        self.assertTrue(rows)
+        return process.returncode, rows
+
+    def manifest(self):
+        return json.loads((self.output / '.idm-site-manifest.json').read_text())
+
+    def test_real_crawl_rewrites_html_css_assets_queries_and_cycles(self):
+        code, rows = self.run_worker(headers={'Cookie': 'session=private', 'Referer': self.url + '/start'})
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['event'], 'complete'); self.assertTrue(rows[-1]['ok'])
+        self.assertFalse(rows[-1]['limited'])
+        manifest = self.manifest(); resources = manifest['resources']
+        one, two = resources[self.url + '/query?id=one'], resources[self.url + '/query?id=two']
+        self.assertNotEqual(one['path'], two['path'])
+        self.assertIn('id=one', (self.output / one['path']).read_text())
+        self.assertIn('id=two', (self.output / two['path']).read_text())
+        html = (self.output / 'index.html').read_text()
+        self.assertIn('href="' + resources[self.url + '/page']['path'] + '"', html)
+        self.assertIn('src="' + resources[self.url + '/img/photo.png']['path'] + '"', html)
+        self.assertIn('data:image/png;base64,AAAA 1x', html)
+        self.assertIn(resources[self.url + '/img/photo.png?size=2']['path'] + ' 2x', html)
+        css_path = self.output / resources[self.url + '/styles/main.css']['path']
+        css = css_path.read_text()
+        self.assertIn(Path(resources[self.url + '/styles/more.css']['path']).name, css)
+        self.assertIn(Path(resources[self.url + '/img/bg.png']['path']).name, css)
+        self.assertNotIn('../img/bg.png', css)
+        self.assertIn(self.url + '/img/inline.png', resources)
+        self.assertIn(self.url + '/img/attribute.png', resources)
+        self.assertEqual(self.external_requests, [])
+        requested = [path for path, _ in self.requests]
+        self.assertEqual(len(requested), len(set(requested)))
+        self.assertTrue(all(headers.get('Cookie') == 'session=private' for _, headers in self.requests))
+        self.assertNotIn('private', json.dumps(rows))
+        self.assertEqual((self.output / '.idm-site-manifest.json').stat().st_mode & 0o077, 0)
+        for relative in manifest['managed']:
+            self.assertTrue((self.output / relative).resolve().is_relative_to(self.output))
+
+    def test_conditional_sync_304_then_changed_page_and_unrelated_file_preserved(self):
+        self.output.mkdir(); unrelated = self.output / 'notes.txt'; unrelated.write_bytes(b'keep this original')
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        original = (self.output / 'index.html').read_bytes()
+        original_mtime = (self.output / 'index.html').stat().st_mtime_ns
+        self.requests.clear()
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        self.assertTrue(all(row.get('status') == 304 for row in rows[:-1]))
+        self.assertEqual(rows[-1]['transferredBytes'], 0)
+        self.assertEqual(original, (self.output / 'index.html').read_bytes())
+        self.assertEqual(original_mtime, (self.output / 'index.html').stat().st_mtime_ns)
+        self.assertTrue(any('If-None-Match' in headers for _, headers in self.requests))
+        self.assertTrue(any('If-Modified-Since' in headers for _, headers in self.requests))
+        self.version = 2
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        self.assertIn('Generation 2', (self.output / 'index.html').read_text())
+        self.assertEqual(unrelated.read_bytes(), b'keep this original')
+
+    def test_mime_sniff_and_same_origin_redirect_keep_offline_fragment(self):
+        code, rows = self.run_worker('/plain'); self.assertEqual(code, 0, rows)
+        self.assertIn('<meta charset="utf-8">', (self.output / 'index.html').read_text())
+        self.output = self.root / 'redirected'
+        code, rows = self.run_worker('/jump'); self.assertEqual(code, 0, rows)
+        html = (self.output / 'index.html').read_text()
+        self.assertIn('href="index.html#anchor"', html)
+        self.assertEqual(sum(value == '/jump' for value, _ in self.requests), 1)
+
+    def test_origin_redirect_block_and_network_failure_report_error_after_progress(self):
+        code, rows = self.run_worker('/external-jump', headers={'Cookie': 'do-not-leak'})
+        self.assertEqual(code, 1); self.assertEqual(rows[-1]['event'], 'error')
+        self.assertIn('origin', rows[-1]['error']); self.assertEqual(self.external_requests, [])
+        self.output = self.root / 'failed'
+        code, rows = self.run_worker('/failed')
+        self.assertEqual(code, 1); self.assertEqual(rows[0]['event'], 'progress')
+        self.assertEqual(rows[-1]['event'], 'error'); self.assertIn('HTTP 503', rows[-1]['error'])
+        self.assertFalse(any(row['event'] == 'complete' for row in rows))
+
+    def test_existing_originals_user_edits_and_symlinks_are_never_overwritten(self):
+        self.output.mkdir(); original = self.output / 'index.html'; original.write_bytes(b'original document')
+        code, rows = self.run_worker(); self.assertEqual(code, 1); self.assertIn('overwrite', rows[-1]['error'])
+        self.assertEqual(original.read_bytes(), b'original document')
+        self.output = self.root / 'managed'
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        edited = self.output / 'index.html'; edited.write_bytes(b'user changed this')
+        code, rows = self.run_worker(); self.assertEqual(code, 1); self.assertIn('modified', rows[-1]['error'])
+        self.assertEqual(edited.read_bytes(), b'user changed this')
+        self.output = self.root / 'symlink'; self.output.mkdir(); outside = self.root / 'outside'; outside.mkdir()
+        (self.output / 'files').symlink_to(outside, target_is_directory=True)
+        code, rows = self.run_worker(); self.assertEqual(code, 1); self.assertIn('Symlinks', rows[-1]['error'])
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_depth_file_and_byte_budgets_are_visible_and_bounded(self):
+        code, rows = self.run_worker(depth=0, maxFiles=2); self.assertEqual(code, 0, rows)
+        self.assertTrue(rows[-1]['limited']); self.assertEqual(rows[-1]['files'], 2)
+        self.assertNotIn(self.url + '/page', self.manifest()['resources'])
+        self.output = self.root / 'tiny'
+        code, rows = self.run_worker(maxBytes=10)
+        self.assertEqual(code, 1); self.assertIn('byte budget', rows[-1]['error'])
+        self.assertFalse((self.output / 'index.html').exists())
+
+    def test_interrupted_cache_metadata_never_reuses_a_mismatched_validator_body(self):
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        manifest = self.manifest()
+        manifest['resources'][self.url + '/index']['rawSha256'] = '0' * 64
+        (self.output / '.idm-site-manifest.json').write_text(json.dumps(manifest))
+        self.requests.clear()
+        code, rows = self.run_worker(); self.assertEqual(code, 0, rows)
+        root_headers = next(headers for path, headers in self.requests if path == '/index')
+        self.assertNotIn('If-None-Match', root_headers)
+        self.assertEqual(rows[0]['status'], 200)
+        self.assertIn('Generation 1', (self.output / 'index.html').read_text())
+
+    def test_compression_decodes_real_html_and_bounds_expansion(self):
+        code, rows = self.run_worker('/gzip'); self.assertEqual(code, 0, rows)
+        self.assertIn('Generation 1', (self.output / 'index.html').read_text())
+        self.assertLess(rows[-1]['transferredBytes'], rows[-1]['bytes'])
+        self.output = self.root / 'bomb'
+        code, rows = self.run_worker('/bomb', maxBytes=1000)
+        self.assertEqual(code, 1); self.assertIn('byte budget', rows[-1]['error'])
+        self.assertFalse((self.output / 'index.html').exists())
+
+    def test_directory_lock_rejects_an_overlapping_job_before_any_fetch(self):
+        self.output.mkdir()
+        with (self.output / '.idm-site.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            code, rows = self.run_worker()
+        self.assertEqual(code, 1); self.assertIn('already using', rows[-1]['error'])
+        self.assertEqual(self.requests, [])
+
+    def test_private_job_headers_and_query_progress_redaction(self):
+        file = self.root / 'job.json'
+        file.write_text(json.dumps({'url': self.url + '/index', 'directory': str(self.output), 'headers': {'Cookie': 'secret'}})); file.chmod(0o644)
+        result = subprocess.run([sys.executable, str(WORKER), str(file)], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1); self.assertIn('private', json.loads(result.stdout)['error'])
+        code, rows = self.run_worker('/index?token=very-secret')
+        self.assertEqual(code, 0, rows); self.assertNotIn('very-secret', json.dumps(rows))
+        self.assertTrue(all(not '?' in row['url'] for row in rows if 'url' in row))
+
+
+if __name__ == '__main__':
+    unittest.main()

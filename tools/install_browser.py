@@ -31,7 +31,8 @@ def install(home, binary, share):
         raise ValueError('Build or install the browser extension before registration')
     wrapper = home/'.local/share/idm-native/browser-host'
     if wrapper.is_symlink(): raise ValueError('Refusing a symlink at the native host launcher')
-    write_atomic(wrapper, '#!/bin/sh\nexec '+shlex.quote(str(binary))+' browser-host "$@"\n', 0o700)
+    if wrapper.exists() and '# IDM Native managed native-host launcher' not in wrapper.read_text():
+        raise ValueError('Refusing to replace an unrelated native host launcher')
     base = dict(name=HOST,description=DESCRIPTION,path=str(wrapper),type='stdio')
     chromium = dict(base,allowed_origins=[f'chrome-extension://{EXTENSION}/'])
     firefox = dict(base,allowed_extensions=['idm-native@earlyhours'])
@@ -47,6 +48,8 @@ def install(home, binary, share):
             existing=json.loads(path.read_text())
             if existing.get('name')!=HOST or existing.get('description')!=DESCRIPTION:
                 raise ValueError(f'Refusing an unrelated native host manifest: {path}')
+    write_atomic(wrapper, '#!/bin/sh\n# IDM Native managed native-host launcher\nexec '+shlex.quote(str(binary))+' browser-host "$@"\n', 0o700)
+    for path, manifest in destinations:
         write_atomic(path,json.dumps(manifest,indent=2)+'\n',0o600)
     return dict(ok=True,extensionDirectory=str(share/'browser/chromium'),
                 chromiumId=EXTENSION,firefoxId='idm-native@earlyhours',manifests=[str(p) for p,_ in destinations])

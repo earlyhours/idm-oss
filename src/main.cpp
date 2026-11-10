@@ -14,6 +14,7 @@
 #include <cstdio>
 #include "downloadmanager.h"
 #include "browserbridge.h"
+#include "automation.h"
 #include "theme.h"
 #include "portalpicker.h"
 #include "translator.h"
@@ -94,22 +95,23 @@ int main(int argc, char **argv) {
         });
         return app.exec();
     }
+    Automation automation(&manager,state);
     auto acceptRequest = [&](const QVariantMap &message) -> QVariantMap {
         auto add = [&](QVariantMap request) {
             if (!request.contains("directory") && !qEnvironmentVariableIsEmpty("IDM_NATIVE_DOWNLOAD_DIRECTORY"))
                 request.insert("directory",qEnvironmentVariable("IDM_NATIVE_DOWNLOAD_DIRECTORY"));
-            return manager.addRequest(request);
+            return automation.enqueue(request);
         };
         if (message.value("command")=="download") {
             const auto id=add(message.value("request").toMap());
-            return id.isEmpty() ? QVariantMap{{"ok",false},{"error",manager.error()}} : QVariantMap{{"ok",true},{"id",id}};
+            return id.isEmpty() ? QVariantMap{{"ok",false},{"error",automation.error()}} : QVariantMap{{"ok",true},{"id",id}};
         }
         const auto requests=message.value("requests").toList();
         if (requests.isEmpty() || requests.size()>100) return {{"ok",false},{"error","Batch must contain 1-100 requests."}};
         QVariantList ids,errors;
         for (const auto &request:requests) {
             const auto id=add(request.toMap());
-            if (id.isEmpty()) errors.append(manager.error()); else ids.append(id);
+            if (id.isEmpty()) errors.append(automation.error()); else ids.append(id);
         }
         return {{"ok",!ids.isEmpty()},{"ids",ids},{"errors",errors}};
     };
@@ -123,6 +125,7 @@ int main(int argc, char **argv) {
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("picker", &picker);
     engine.rootContext()->setContextProperty("browserBridge", &browserBridge);
+    engine.rootContext()->setContextProperty("automation", &automation);
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &manager);

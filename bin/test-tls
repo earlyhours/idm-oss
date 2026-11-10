@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/tls-tests"
+cd "$ROOT/build/tls-tests"
+qmake6 "$ROOT/tests/tls_tests.pro"
+make -j2
+./tls_tests "$@"

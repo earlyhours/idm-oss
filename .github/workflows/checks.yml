@@ -6,7 +6,7 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install free build tools
-        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland python nodejs yt-dlp ffmpeg
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium
       - uses: actions/checkout@v4
       - name: Build
         run: bin/build
@@ -20,6 +20,20 @@ jobs:
         run: node --test tests/browser_extension_test.mjs
       - name: Browser registration
         run: python tests/install_browser_test.py
+      - name: Queue and scheduling behavior
+        run: bin/test-automation
+      - name: Independent adversarial checks
+        run: bin/test-automation-adversarial
+      - name: Website mirroring
+        run: python tests/website_worker_test.py
+      - name: Trusted and untrusted HTTPS
+        run: bin/test-tls
+      - name: Media quality variants
+        run: python tests/media_quality_test.py
+      - name: Scanner and completion integration
+        run: bin/test-system
+      - name: Real browser capture
+        run: node tests/browser_e2e.mjs
       - name: Command line
         run: python tests/cli_test.py
       - name: Static tooling
