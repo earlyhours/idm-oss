@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/parity-tests"
+cd "$ROOT/build/parity-tests"
+qmake6 "$ROOT/tests/final_parity_tests.pro"
+make -j2
+QT_QPA_PLATFORM=offscreen ./final_parity_tests "$@"

@@ -11,7 +11,7 @@ The supplied folder contains a custom Windows installer and a different executab
 | Is the replacement executable the original? | Answered | Different size and SHA-256. Native analysis uses the original extracted executable. No licensing bypass applied. |
 | How do browser downloads reach IDM? | Partly answered | [Browser analysis](browser-integration.md), six JS files parsed with REA, plus manually traced source lines. Dynamic semantics and native field compatibility remain partial. |
 | How do native HTTP downloads and helpers work? | Partly answered | [Native analysis](native-analysis.md), 45 PE images inventoried, original x86 application and message host examined with free tools. Exact per-function coverage is stated there. |
-| Can it work natively on Omarchy? | Core workflow implemented | New Qt Network engine and Qt Quick app, tested with real local transfers. This establishes the behavior of the reconstruction, not full equivalence with IDM. |
+| Can it work natively on Omarchy? | Requested capability set implemented | Native app, browser/media bridge, network policies, queues and website grabber have per-feature tests. See the 70-feature ledger and final audit. This establishes the documented reconstruction behavior, not universal equivalence with IDM. |
 | Has everything been recompiled? | No | No original native sources/compiler project were supplied. The new native app is compiled independently. |
 
 ## Architecture recovered so far
@@ -32,4 +32,4 @@ The new Omarchy app uses a smaller architecture: a Qt Quick window and a command
 
 Installer signature trust was not validated. Checksums establish byte identity and stream integrity. Static analysis did not execute the supplied files, contact their network endpoints, or inspect the user's browser accounts. Runtime behavior of the original Windows app remains unverified.
 
-TL;DR: the installer and browser bridge are understood well enough to document their structure and build a tested native downloader. Complete native-source recovery and full IDM parity remain unproven.
+TL;DR: the recovered structure supports a native implementation with a tested 70-item capability set. Complete native-source recovery and full IDM parity remain unproven.

@@ -25,6 +25,7 @@ public:
     int chunkSize=2048,chunkInterval=5;
     QString fixtureRoot, redirectTarget="/file.bin";
     QByteArray requiredCookie,requiredAuthorization,requiredProxyAuthorization;
+    QVariantMap requiredHeaders;
     QStringList targets;
     QList<QVariantMap> observedHeaders;
     Server() {
@@ -41,6 +42,8 @@ public:
                     QVariantMap receivedHeaders;
                     for (auto line : request.split('\n')) { const auto colon=line.indexOf(':'); if(colon>0) receivedHeaders.insert(QString::fromLatin1(line.left(colon).trimmed().toLower()),QString::fromLatin1(line.mid(colon+1).trimmed())); }
                     observedHeaders.append(receivedHeaders);
+                    for(auto it=requiredHeaders.begin();it!=requiredHeaders.end();++it)if(receivedHeaders.value(it.key()).toString()!=it.value().toString()){socket->write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");socket->disconnectFromHost();return;}
+
                     if(mode=="stall")return;
                     if(!requiredAuthorization.isEmpty() && receivedHeaders.value("authorization").toByteArray()!=requiredAuthorization){socket->write("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Fixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");socket->disconnectFromHost();return;}
                     if(!requiredProxyAuthorization.isEmpty() && receivedHeaders.value("proxy-authorization").toByteArray()!=requiredProxyAuthorization){socket->write("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"ProxyFixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");socket->disconnectFromHost();return;}
@@ -410,6 +413,71 @@ private slots:
     void ftpFailureDoesNotPublish() {
         FtpServer s;QTemporaryDir dir;DownloadManager m(dir.path()+"/state");m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"username","ftp-user"},{"password","wrong"}});
         QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("error"),10000);QVERIFY(!QFile::exists(row(m)["path"].toString()));
+    }
+    void arbitraryCustomHeadersWorkAndManagedHeadersStayOwned() {
+        Server s;s.requiredHeaders={{"x-api-key","private-api-key"},{"x-client-context","custom-client"}};QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"headers",QVariantMap{
+            {"X-Api-Key","private-api-key"},{"X-Client-Context","custom-client"},{"Host","evil.invalid"},{"Range","bytes=99-100"},
+            {"Accept-Encoding","gzip"},{"Content-Length","999"},{"Transfer-Encoding","chunked"},{"Proxy-Authorization","do-not-forward"},
+            {"Connection","X-Hop-Token"},{"X-Hop-Token","hop-secret"}}}});
+        QVERIFY2(!id.isEmpty(),qPrintable(m.error()));QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QCOMPARE(contents(row(m)["path"].toString()),s.body);
+        for(const auto &headers:s.observedHeaders){QCOMPARE(headers.value("x-api-key").toString(),QString("private-api-key"));QCOMPARE(headers.value("x-client-context").toString(),QString("custom-client"));
+            QCOMPARE(headers.value("accept-encoding").toString(),QString("identity"));QVERIFY(headers.value("host").toString()!="evil.invalid");QVERIFY(headers.value("content-length").toString()!="999");
+            QVERIFY(!headers.contains("transfer-encoding"));QVERIFY(!headers.contains("proxy-authorization"));QVERIFY(!headers.contains("x-hop-token"));}
+        QCOMPARE(s.ranges.first(),QByteArray("bytes=0-0"));QVERIFY(!row(m).contains("headers"));
+    }
+    void customCredentialsCannotFollowCrossOriginRedirects() {
+        Server other;Server source;source.mode="redirect";source.redirectTarget=other.url();source.requiredHeaders={{"x-api-key","origin-only-key"}};
+        QTemporaryDir dir;DownloadManager m(dir.path()+"/state");m.addRequest({{"url",source.url("redirect")},{"directory",dir.path()+"/out"},{"headers",QVariantMap{{"X-Api-Key","origin-only-key"}}}});
+        QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("error"),5000);QCOMPARE(other.requests,0);QVERIFY(source.requests>0);QVERIFY(!QFile::exists(row(m)["path"].toString()));
+    }
+    void expiredCookieCanBeUpdatedForTheSameUrl() {
+        Server s;s.requiredCookie="session=fresh";s.requiredHeaders={{"x-api-key","fresh-key"}};QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"headers",QVariantMap{{"Cookie","session=expired"},{"X-Api-Key","expired-key"},{"User-Agent","OldBrowserContext"}}}});
+        QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("error"),5000);QCOMPARE(row(m)["httpStatus"].toInt(),403);const auto old=row(m);const int requests=s.requests;
+        QVERIFY(m.updateContext(id,{{"url",s.url()+"#same-resource"},{"headers",QVariantMap{{"Cookie","session=fresh"},{"X-Api-Key","fresh-key"}}},{"pageUrl",s.url("watch")}}));
+        QCOMPARE(row(m)["url"],old["url"]);QCOMPARE(row(m)["path"],old["path"]);QCOMPARE(row(m)["parts"],old["parts"]);QTest::qWait(30);QCOMPARE(s.requests,requests);
+        m.resume(id);QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QCOMPARE(contents(row(m)["path"].toString()),s.body);
+        for(int i=requests;i<s.observedHeaders.size();++i){QCOMPARE(s.observedHeaders[i].value("cookie").toString(),QString("session=fresh"));QCOMPARE(s.observedHeaders[i].value("x-api-key").toString(),QString("fresh-key"));QCOMPARE(s.observedHeaders[i].value("user-agent").toString(),QString("IDM-Native/0.1"));}
+    }
+    void contextUpdatesKeepPartialBytesAndDiscardOldAuthenticationCache() {
+        Server s;s.slow=true;s.requiredAuthorization="Basic "+QByteArray("old-user:old-password").toBase64();QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"username","old-user"},{"password","old-password"}});
+        QTRY_VERIFY_WITH_TIMEOUT(row(m)["received"].toLongLong()>8192,10000);m.pause(id);QTest::qWait(30);const auto old=row(m);const int requests=s.requests;
+        QVariantMap partials;QDir pieces(dir.path()+"/state/"+id);for(const auto &name:pieces.entryList({"*.part"},QDir::Files))partials[name]=QCryptographicHash::hash(contents(pieces.filePath(name)),QCryptographicHash::Sha256).toHex();
+        s.requiredAuthorization="Basic "+QByteArray("new-user:new-password").toBase64();
+        QVERIFY(m.updateContext(id,{{"username","new-user"},{"password","new-password"}}));QCOMPARE(row(m)["received"],old["received"]);QCOMPARE(row(m)["parts"],old["parts"]);QCOMPARE(row(m)["resumable"],old["resumable"]);
+        for(auto it=partials.begin();it!=partials.end();++it)QCOMPARE(QCryptographicHash::hash(contents(pieces.filePath(it.key())),QCryptographicHash::Sha256).toHex(),it.value().toByteArray());
+        m.resume(id);QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QCOMPARE(contents(row(m)["path"].toString()),s.body);
+        for(int i=requests;i<s.observedHeaders.size();++i)QVERIFY(s.observedHeaders[i].value("authorization").toByteArray()!=QByteArray("Basic ")+QByteArray("old-user:old-password").toBase64());
+    }
+    void invalidContextUpdateCannotReplaceTheSavedContext() {
+        Server s;s.requiredHeaders={{"x-api-key","original-key"}};QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"start",false},{"headers",QVariantMap{{"X-Api-Key","original-key"}}}});const auto old=row(m);
+        const auto saved=contents(dir.path()+"/state/queue.json");
+        for(const auto &context:QList<QVariantMap>{
+            {{"headers",QVariantMap{{"X-Api-Key","bad\r\nInjected: yes"}}}},{{"headers","not a header map"}},{{"url","https://other.invalid/file.bin"}},
+            {{"url",s.url("other.bin")}},{{"url",s.url()+"?different=resource"}},{{"pageUrl","file:///etc/passwd"}},{{"username","bad\nuser"}},{{"password","without-user"}},{{"method","POST"}}}) {
+            QVERIFY(!m.updateContext(id,context));QVERIFY(!m.error().isEmpty());QCOMPARE(row(m),old);QCOMPARE(contents(dir.path()+"/state/queue.json"),saved);
+        }
+        m.resume(id);QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QCOMPARE(contents(row(m)["path"].toString()),s.body);
+    }
+    void contextUpdateIsPrivatePersistentAndCannotRunOnActiveJobs() {
+        Server s;s.slow=true;s.requiredCookie="session=fresh";s.requiredHeaders={{"x-api-key","fresh-key"}};QTemporaryDir dir;QString id;
+        {
+            DownloadManager m(dir.path()+"/state");id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"media",false},{"format","720p"},{"start",false}});
+            QVERIFY(m.updateContext(id,{{"headers",QVariantMap{{"Cookie","session=fresh"},{"X-Api-Key","fresh-key"}}}}));QCOMPARE(row(m)["format"].toString(),QString("720p"));
+            QFile file(dir.path()+"/state/queue.json");QVERIFY(!(file.permissions()&(QFile::ReadGroup|QFile::ReadOther)));QCOMPARE(s.requests,0);
+        }
+        DownloadManager m(dir.path()+"/state");m.resume(id);QVERIFY(!m.updateContext(id,{{"headers",QVariantMap{{"X-Api-Key","bad-key"}}}}));
+        QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QVERIFY(!m.updateContext(id,{}));QCOMPARE(contents(row(m)["path"].toString()),s.body);
+    }
+    void failedContextSaveRollsBackTheLiveCredentials() {
+        Server s;s.requiredHeaders={{"x-api-key","original-key"}};QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url()},{"directory",dir.path()+"/out"},{"start",false},{"headers",QVariantMap{{"X-Api-Key","original-key"}}}});
+        const QString queue=dir.path()+"/state/queue.json",backup=dir.path()+"/state/queue.backup";QVERIFY(QFile::rename(queue,backup));QVERIFY(QDir().mkdir(queue));
+        QVERIFY(!m.updateContext(id,{{"headers",QVariantMap{{"X-Api-Key","rejected-key"}}}}));QVERIFY(!m.error().isEmpty());QVERIFY(QDir().rmdir(queue));QVERIFY(QFile::rename(backup,queue));
+        m.resume(id);QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),10000);QCOMPARE(contents(row(m)["path"].toString()),s.body);
     }
     void queueAndDownloadFilesArePrivate() {
         Server s;s.slow=true;QTemporaryDir dir;const auto state=dir.path()+"/state";

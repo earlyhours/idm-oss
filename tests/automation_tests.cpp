@@ -17,6 +17,7 @@ public:
   int failures = 0, errorCode = 503, requests = 0, active = 0, maxActive = 0;
   QStringList paths;
   QByteArray lastRequest;
+  QByteArray requiredCookie;
   bool slow = false;
   Fixture() {
     connect(this, &QTcpServer::newConnection, this, [this] {
@@ -36,7 +37,10 @@ public:
           maxActive = qMax(maxActive, active);
           connect(socket, &QTcpSocket::disconnected, this,
                   [this] { --active; });
-          const int code = failures-- > 0 ? errorCode : 200;
+          int code = failures-- > 0 ? errorCode : 200;
+          if (!requiredCookie.isEmpty() &&
+              !lastRequest.toLower().contains("cookie: " + requiredCookie))
+            code = 403;
           const auto bytes = code == 200 ? body : QByteArray("failed");
           socket->write("HTTP/1.1 " + QByteArray::number(code) +
                         " Response\r\nContent-Length: " +
@@ -178,6 +182,63 @@ private slots:
     QCOMPARE(automation.jobPolicies()[expired].toMap()["armed"].toBool(),
              false);
   }
+  void recapturedBrowserContextResumesTheExistingSameUrlJob() {
+    Fixture server;
+    server.requiredCookie = "session=fresh";
+    QTemporaryDir temporary;
+    DownloadManager manager(temporary.path() + "/state");
+    Automation automation(&manager, temporary.path() + "/state", nullptr,
+                          quiet());
+    QVERIFY(automation.configure(
+        {{"directory", temporary.path() + "/out"}, {"notifications", false}}));
+    const auto id = automation.enqueue(
+        {{"url", server.url()},
+         {"headers", QVariantMap{{"Cookie", "session=expired"}}}});
+    QVERIFY(!id.isEmpty());
+    QTRY_COMPARE(first(manager)["status"].toString(), QString("error"));
+    const auto path = first(manager)["path"].toString();
+    QCOMPARE(automation.enqueue(
+                 {{"url", server.url()},
+                  {"headers", QVariantMap{{"Cookie", "session=fresh"},
+                                          {"X-Api-Key", "current-key"}}}}),
+             id);
+    QCOMPARE(manager.downloads().size(), 1);
+    QTRY_VERIFY(complete(manager));
+    QCOMPARE(first(manager)["path"].toString(), path);
+    QVERIFY(server.lastRequest.toLower().contains("x-api-key: current-key"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), server.body);
+  }
+
+  void mediaFormatsAndDestinationsAreSeparateDownloads() {
+    Fixture server;
+    QTemporaryDir temporary;
+    DownloadManager manager(temporary.path() + "/state");
+    Automation automation(&manager, temporary.path() + "/state", nullptr,
+                          quiet());
+    automation.configure(
+        {{"directory", temporary.path() + "/one"}, {"notifications", false}});
+    QVariantMap request{{"url", server.url("master.m3u8")},
+                        {"media", true},
+                        {"format", "720p"},
+                        {"start", false}};
+    const auto firstId = automation.enqueue(request);
+    QVERIFY(!firstId.isEmpty());
+    QCOMPARE(automation.enqueue(request), firstId);
+    request["format"] = "1080p";
+    const auto second = automation.enqueue(request);
+    QVERIFY(!second.isEmpty());
+    QVERIFY(second != firstId);
+    request["format"] = "720p";
+    request["directory"] = temporary.path() + "/two";
+    const auto third = automation.enqueue(request);
+    QVERIFY(!third.isEmpty());
+    QVERIFY(third != firstId);
+    QCOMPARE(manager.downloads().size(), 3);
+    QCOMPARE(server.requests, 0);
+  }
+
   void schedulesStartAndStopQueues() {
     Fixture server;
     server.slow = true;

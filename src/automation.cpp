@@ -252,19 +252,35 @@ QString Automation::enqueue(QVariantMap request) {
   if (!settingsWritable)
     return {};
   const auto url = normalizedUrl(request.value("url").toString());
-  if (!request.value("allowDuplicate").toBool())
-    for (const auto &value : manager->downloads()) {
-      auto job = value.toMap();
-      if (normalizedUrl(job.value("url").toString()) == url &&
-          (job.value("status") != "complete" ||
-           QFileInfo::exists(job.value("path").toString()))) {
-        const auto id = job.value("id").toString();
-        if (request.value("start", true).toBool() &&
-            job.value("status") != "complete")
-          resume(id);
-        return id;
-      }
-    }
+  const QString host = QUrl(url).host().toLower();
+  const auto site = settings.value("siteSettings").toMap().value(host).toMap();
+  for (const auto &key :
+       QStringList{"directory", "connections", "proxy", "username", "password"})
+    if (!request.contains(key) && site.contains(key))
+      request[key] = site[key];
+  if (!request.contains("directory"))
+    request["directory"] = settings.value("directory");
+  if (!request.contains("connections"))
+    request["connections"] = settings.value("connections");
+  if (!request.contains("proxy"))
+    request["proxy"] = settings.value("proxy");
+  if (site.contains("headers") &&
+      site.value("headers").metaType().id() != QMetaType::QVariantMap) {
+    reject(tr("Site request headers must be a map."));
+    return {};
+  }
+  if (!request.contains("headers") ||
+      request.value("headers").metaType().id() == QMetaType::QVariantMap) {
+    QVariantMap headers;
+    const auto siteHeaders = site.value("headers").toMap();
+    for (auto i = siteHeaders.begin(); i != siteHeaders.end(); ++i)
+      headers[i.key().toLower()] = i.value();
+    const auto supplied = request.value("headers").toMap();
+    for (auto i = supplied.begin(); i != supplied.end(); ++i)
+      headers[i.key().toLower()] = i.value();
+    if (!headers.isEmpty() || request.contains("headers"))
+      request["headers"] = headers;
+  }
   const auto filter =
       settings.value("typeFilter").toString().trimmed().toLower();
   if (!filter.isEmpty() && filter != "*") {
@@ -284,18 +300,44 @@ QString Automation::enqueue(QVariantMap request) {
       return {};
     }
   }
-  const QString host = QUrl(url).host().toLower();
-  const auto site = settings.value("siteSettings").toMap().value(host).toMap();
-  for (const auto &key : QStringList{"directory", "connections", "proxy",
-                                     "headers", "username", "password"})
-    if (!request.contains(key) && site.contains(key))
-      request[key] = site[key];
-  if (!request.contains("directory"))
-    request["directory"] = settings.value("directory");
-  if (!request.contains("connections"))
-    request["connections"] = settings.value("connections");
-  if (!request.contains("proxy"))
-    request["proxy"] = settings.value("proxy");
+  if (!request.value("allowDuplicate").toBool())
+    for (const auto &value : manager->downloads()) {
+      auto job = value.toMap();
+      if (normalizedUrl(job.value("url").toString()) == url &&
+          job.value("media").toBool() == request.value("media").toBool() &&
+          (!request.value("media").toBool() ||
+           job.value("format", "best").toString() ==
+               request.value("format", "best").toString()) &&
+          QFileInfo(job.value("path").toString()).absolutePath() ==
+              QDir(request.value("directory").toString()).absolutePath() &&
+          (job.value("status") != "complete" ||
+           QFileInfo::exists(job.value("path").toString()))) {
+        const auto id = job.value("id").toString();
+        if (request.value("start", true).toBool() &&
+            job.value("status") != "complete") {
+          if ((job.value("status") == "paused" ||
+               job.value("status") == "error") &&
+              (request.contains("headers") || request.contains("username") ||
+               request.contains("password") || request.contains("pageUrl"))) {
+            bool updated = false;
+            if (!QMetaObject::invokeMethod(
+                    manager, "updateContext", Qt::DirectConnection,
+                    Q_RETURN_ARG(bool, updated), Q_ARG(QString, id),
+                    Q_ARG(QVariantMap, request)) ||
+                !updated) {
+              reject(
+                  manager->error().isEmpty()
+                      ? tr("Could not update this download's browser context.")
+                      : manager->error());
+              return {};
+            }
+          }
+          failure.clear();
+          resume(id);
+        }
+        return id;
+      }
+    }
   if (request.value("proxy").metaType().id() == QMetaType::QString) {
     const auto text = request.value("proxy").toString();
     if (text.isEmpty())
@@ -374,6 +416,7 @@ void Automation::resume(const QString &id) {
   cancelCompletionAction();
   auto p = policies.value(id).toMap();
   p["armed"] = true;
+  p["manual"] = true;
   p["retries"] = 0;
   p["nextTry"] = "";
   if (!p.contains("queue"))
@@ -475,6 +518,7 @@ void Automation::startQueue(const QString &name) {
     if (p.value("queue", mainQueue) == name && job["status"] != "complete") {
       p["queue"] = name;
       p["armed"] = true;
+      p["manual"] = true;
       p["retries"] = 0;
       p["nextTry"] = "";
       policies[job["id"].toString()] = p;
@@ -596,7 +640,7 @@ void Automation::reconcile() {
     if (!policy.value("armed").toBool() ||
         !queueSettings.value(queue).toMap().value("active").toBool())
       continue;
-    if (status == "error") {
+    if (status == "error" && !policy.value("manual").toBool()) {
       const int code = job.value("httpStatus").toInt();
       if (code == 401 || code == 403 || code == 410) {
         policy["armed"] = false;
@@ -648,6 +692,7 @@ void Automation::reconcile() {
     const auto id = job["id"].toString();
     auto p = policies[id].toMap();
     p["nextTry"] = "";
+    p["manual"] = false;
     policies[id] = p;
     QMetaObject::invokeMethod(manager, "setRateLimit", Qt::DirectConnection,
                               Q_ARG(QString, id), Q_ARG(qint64, rate));
@@ -817,7 +862,8 @@ bool Automation::importList(const QString &path) {
       auto source = v.toMap();
       QVariantMap request;
       for (const auto &key :
-           QStringList{"url", "filename", "description", "queue", "priority"})
+           QStringList{"url", "filename", "description", "queue", "priority",
+                       "media", "format", "connections"})
         if (source.contains(key))
           request[key] = source[key];
       request["start"] = false;
@@ -852,7 +898,10 @@ bool Automation::exportList(const QString &path) {
                     {"filename", job["name"].toString()},
                     {"description", job["description"].toString()},
                     {"queue", policy.value("queue", mainQueue).toString()},
-                    {"priority", policy.value("priority", 0).toInt()}});
+                    {"priority", policy.value("priority", 0).toInt()},
+                    {"media", job.value("media").toBool()},
+                    {"format", job.value("format", "best").toString()},
+                    {"connections", job.value("connections", 4).toInt()}});
   }
   QSaveFile file(QUrl(path).isLocalFile() ? QUrl(path).toLocalFile() : path);
   const auto bytes =

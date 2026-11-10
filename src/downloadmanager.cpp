@@ -32,7 +32,9 @@ bool httpUrl(const QUrl &url) {
 }
 QString origin(const QUrl &url) { return url.scheme().toLower() + "://" + url.host().toLower() + ":" + QString::number(url.port(url.scheme() == "https" ? 443 : 80)); }
 bool requestHeaders(const QVariantMap &input, QVariantMap &result, QString &error) {
-    const QStringList allowed{"cookie", "authorization", "user-agent", "referer", "origin", "accept", "accept-language"};
+    QStringList managed{"host", "content-length", "transfer-encoding", "connection", "proxy-connection", "keep-alive", "te", "trailer", "upgrade", "expect", "range", "if-range", "content-range", "accept-encoding", "proxy-authorization", "proxy-authenticate"};
+    for(auto it=input.begin();it!=input.end();++it)if(it.key().compare("connection",Qt::CaseInsensitive)==0)
+        for(const auto &name:it.value().toString().split(','))managed.append(name.trimmed().toLower());
     if (input.size() > 64) { error = DownloadManager::tr("Too many request headers."); return false; }
     qsizetype length = 0;
     for (auto it = input.begin(); it != input.end(); ++it) {
@@ -42,7 +44,7 @@ bool requestHeaders(const QVariantMap &input, QVariantMap &result, QString &erro
             value.contains(QRegularExpression("[\\x00-\\x1f\\x7f]"))) {
             error = DownloadManager::tr("Invalid request header. Control characters and oversized headers are rejected."); return false;
         }
-        if (!allowed.contains(name)) continue;
+        if (managed.contains(name)) continue;
         if ((name == "referer" || name == "origin") && !(name == "origin" && value == "null") && !httpUrl(QUrl(value,QUrl::StrictMode))) {
             error = DownloadManager::tr("Invalid request origin or referrer."); return false;
         }
@@ -595,7 +597,7 @@ QVariantList DownloadManager::downloads() const {
         result.append(QVariantMap{{"id",j->id},{"url",j->url},{"path",j->path},{"name",QFileInfo(j->path).fileName()},{"status",j->status},{"received",bytes},{"total",j->total},
                      {"speed",j->status == "downloading" ? speed : 0},{"connections",j->ranged ? j->connections : 1},{"error",j->error},{"media",j->media},
                      {"category",category(j->path,j->media)},{"created",j->created},{"resumable",!j->media && j->ranged && !j->validator.isEmpty()},
-                     {"parts",parts},{"eta",eta},{"httpStatus",j->httpStatus},{"rateLimitBytes",j->rateLimitBytes},{"timeoutSeconds",j->timeoutSeconds},{"description",j->description},{"title",j->title}});
+                     {"parts",parts},{"eta",eta},{"httpStatus",j->httpStatus},{"rateLimitBytes",j->rateLimitBytes},{"timeoutSeconds",j->timeoutSeconds},{"description",j->description},{"title",j->title},{"format",j->format}});
     }
     return result;
 }
@@ -694,4 +696,33 @@ bool DownloadManager::refresh(const QString &id, const QString &input) {
     if(origin(old)!=origin(url)){j->headers.clear();j->username.clear();j->password.clear();j->access.reset();}
     j->url=url.toString(QUrl::FullyEncoded);j->error.clear();j->status="paused";if(!d->save())return false;
     d->error.clear();if(active)d->start(j);emit changed();return true;
+}
+
+bool DownloadManager::updateContext(const QString &id, const QVariantMap &request) {
+    auto reject=[this](const QString &why){d->error=why;emit changed();return false;};
+    auto j=d->find(id);if(!j || !d->writable)return reject(tr("Download not found or queue is unavailable."));
+    if(j->status!="paused" && j->status!="error")return reject(tr("Pause the unfinished download before updating its request context."));
+    if(request.contains("method") && request.value("method").toString().compare("GET",Qt::CaseInsensitive)!=0)return reject(tr("Only GET browser requests are supported."));
+    if(request.contains("url")) {
+        if(request.value("url").metaType().id()!=QMetaType::QString)return reject(tr("Request context needs a valid download URL."));
+        const QUrl next(request.value("url").toString(),QUrl::StrictMode),current(j->url);
+        if(!downloadUrl(next) || next.adjusted(QUrl::RemoveFragment)!=current.adjusted(QUrl::RemoveFragment))return reject(tr("Request context must belong to the same download URL. Refresh its address separately."));
+    }
+    auto headers=j->headers;
+    if(request.contains("headers")) {
+        if(request.value("headers").metaType().id()!=QMetaType::QVariantMap)return reject(tr("Request headers must be a map of strings."));
+        headers.clear();QString why;if(!requestHeaders(request.value("headers").toMap(),headers,why))return reject(why);
+    }
+    if(!httpUrl(QUrl(j->url)) && !headers.isEmpty())return reject(tr("FTP requests do not support browser headers."));
+    QString username=j->username,password=j->password,pageUrl=j->pageUrl;
+    for(const auto &key:QStringList{"username","password","pageUrl"})if(request.contains(key) && request.value(key).metaType().id()!=QMetaType::QString)return reject(tr("Credentials and browser page URL must be strings."));
+    if(request.contains("username"))username=request.value("username").toString();
+    if(request.contains("password"))password=request.value("password").toString();
+    if(request.contains("pageUrl"))pageUrl=request.value("pageUrl").toString();
+    QString why;if(!advancedRequest({{"username",username},{"password",password}},why))return reject(why);
+    if(!pageUrl.isEmpty() && !httpUrl(QUrl(pageUrl,QUrl::StrictMode)))return reject(tr("Invalid browser page URL."));
+    const auto oldHeaders=j->headers;const auto oldUsername=j->username,oldPassword=j->password,oldPageUrl=j->pageUrl;
+    j->headers=headers;j->username=username;j->password=password;j->pageUrl=pageUrl;
+    if(!d->save()){j->headers=oldHeaders;j->username=oldUsername;j->password=oldPassword;j->pageUrl=oldPageUrl;return false;}
+    j->access.reset();d->error.clear();emit changed();return true;
 }

@@ -45,7 +45,7 @@ test('context menu hands a direct link and its private request context to native
   const w=worker(),url='https://files.test/file.zip';
   w.api.runtime.onInstalled.listeners[0]();
   assert(w.menus.some(menu=>menu.id==='idm-native-link'));
-  w.headers(url,[{name:'Cookie',value:'private=1'},{name:'Referer',value:'https://page.test/watch'},{name:'User-Agent',value:'RealBrowser/9'},{name:'Origin',value:'https://page.test'},{name:'Authorization',value:'do-not-copy'},{name:'Accept',value:'application/zip'}]);
+  w.headers(url,[{name:'Cookie',value:'private=1'},{name:'Referer',value:'https://page.test/watch'},{name:'User-Agent',value:'RealBrowser/9'},{name:'Origin',value:'https://page.test'},{name:'Authorization',value:'Bearer fixture-context'},{name:'Accept',value:'application/zip'}]);
   w.api.contextMenus.onClicked.listeners[0]({menuItemId:'idm-native-link',linkUrl:url,pageUrl:'https://page.test/watch'},{id:7,title:'Example',url:'https://page.test/watch'});
   await flush();
   assert.equal(w.nativeCalls.length,1);
@@ -53,7 +53,7 @@ test('context menu hands a direct link and its private request context to native
   const {command,request}=w.nativeCalls[0].message;
   assert.equal(command,'download');assert.equal(request.url,url);assert.equal(request.filename,'file.zip');
   assert.equal(request.headers.Cookie,'private=1');assert.equal(request.headers['User-Agent'],'RealBrowser/9');
-  assert.equal(request.headers.Origin,'https://page.test');assert.equal(request.headers.Authorization,undefined);
+  assert.equal(request.headers.Origin,'https://page.test');assert.equal(request.headers.Authorization,'Bearer fixture-context');
   assert.equal(request.media,false);
   assert.deepEqual(Object.keys(w.storage),[]);
 });
@@ -86,6 +86,17 @@ test('media source handoff carries selected quality and rejects header injection
   const request=w.nativeCalls[0].message.request;
   assert.equal(request.format,'720p');assert.equal(request.media,true);assert.equal(request.headers.Cookie,'session=cookie-value');
   assert.equal(request.headers.Referer,'https://page.test/watch');assert.equal(request.headers.Accept,'video/*');
+});
+
+test('captured authentication and custom headers stay private and reach native requests',async()=>{
+  const w=worker(),url='https://media.test/private.m3u8';
+  w.headers(url,[{name:'Authorization',value:'Bearer fixture-token'},{name:'X-Api-Key',value:'fixture-key'},{name:'Host',value:'wrong-host'},{name:'X-Bad',value:'bad\r\nInjected: yes'}]);
+  const view=await w.message({type:'sources',tabId:7});
+  assert(!JSON.stringify(view).includes('fixture-token'));assert(!JSON.stringify(view).includes('fixture-key'));
+  const result=await w.message({type:'download',tabId:7,url});assert.equal(result.ok,true);
+  const request=w.nativeCalls.at(-1).message.request;
+  assert.equal(request.headers.Authorization,'Bearer fixture-token');assert.equal(request.headers['X-Api-Key'],'fixture-key');
+  assert.equal(request.headers.Host,undefined);assert.equal(request.headers['X-Bad'],undefined);
 });
 
 test('automatic interception defaults off and never cancels before native acceptance',async()=>{

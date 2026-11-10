@@ -125,6 +125,53 @@ ApplicationWindow {
         scannerProgram.text = command.length ? command[0] : ""
         scannerArguments.text = command.slice(1).join("\n")
     }
+    function parseHeaders(text) {
+        let value
+        try { value = JSON.parse(text.trim() || "{}") }
+        catch (error) { throw new Error(qsTr("Enter a JSON object with header names and string values.")) }
+        if (value === null || typeof value !== "object" || Array.isArray(value))
+            throw new Error(qsTr("Enter a JSON object with header names and string values."))
+        if (text.length > 65536 || Object.keys(value).length > 64)
+            throw new Error(qsTr("Use at most 64 headers and 64 KB of JSON text."))
+        for (let name of Object.keys(value))
+            if (typeof value[name] !== "string" || /[\x00-\x1f\x7f]/.test(value[name]))
+                throw new Error(qsTr("Header values must be strings without control characters."))
+        return value
+    }
+    function siteForUrl(url) {
+        let match = url.match(/^[a-z]+:\/\/(\[[^\]]+\]|[^/:?#]+)/i)
+        let host = match ? match[1].replace(/^\[|\]$/g,"").toLowerCase() : ""
+        return (preferences.siteSettings || {})[host] || {}
+    }
+    function loadSiteSettings() {
+        let site=(preferences.siteSettings || {})[siteHost.text.trim().toLowerCase()] || {}, custom={}
+        siteLogin.text=site.username || ""; sitePassword.text=site.password || ""
+        siteDirectory.text=site.directory || ""; siteConnections.value=site.connections || 4; siteProxy.text=site.proxy || ""
+        siteAgent.text=""; siteReferer.text=""
+        for (let name of Object.keys(site.headers || {})) {
+            if (name.toLowerCase() === "user-agent") siteAgent.text=site.headers[name]
+            else if (name.toLowerCase() === "referer") siteReferer.text=site.headers[name]
+            else custom[name]=site.headers[name]
+        }
+        siteHeaders.text=JSON.stringify(custom,null,2); siteStatus.text=""; lastError=""
+    }
+    function saveSiteSettings() {
+        let headers
+        try { headers=parseHeaders(siteHeaders.text) }
+        catch (error) { lastError=error.message; return }
+        for (let name of Object.keys(headers))
+            if (["user-agent","referer"].includes(name.toLowerCase())) delete headers[name]
+        if (siteAgent.text) headers["User-Agent"]=siteAgent.text
+        if (siteReferer.text) headers["Referer"]=siteReferer.text
+        let site={connections:siteConnections.value,headers:headers}
+        if (siteDirectory.text) site.directory=siteDirectory.text
+        if (siteProxy.text) site.proxy=siteProxy.text
+        if (siteLogin.text) { site.username=siteLogin.text; site.password=sitePassword.text }
+        let sites=Object.assign({},preferences.siteSettings || {})
+        sites[siteHost.text.trim().toLowerCase()]=site
+        if (!automation.configure({siteSettings:sites})) { lastError=automation.error; return }
+        lastError=""; siteStatus.text=qsTr("Site settings saved.")
+    }
     function saveOptions() {
         let command = scannerProgram.text.trim() ? [scannerProgram.text.trim()].concat(scannerArguments.text.split("\n").filter(x => x.length)) : []
         let value = {directory:defaultsDirectory.text,connections:defaultsConnections.value,maxConcurrent:concurrentInput.value,
@@ -173,8 +220,7 @@ ApplicationWindow {
     function prepareInformation() {
         pendingRequest = {url:urlInput.text.trim(), directory:defaultDirectory, connections:defaultConnections, media:mediaInput.checked}
         addressInput.text = pendingRequest.url
-        let host = pendingRequest.url.match(/^https?:\/\/([^/:?#]+)/i)
-        let site = host ? (preferences.siteSettings || {})[host[1].toLowerCase()] || {} : {}
+        let site=siteForUrl(pendingRequest.url)
         directoryInput.text = site.directory || defaultDirectory
         let path = pendingRequest.url.split(/[?#]/)[0]
         try { filenameInput.text = decodeURIComponent(path.substring(path.lastIndexOf("/")+1)) || "download" } catch(e) { filenameInput.text = "download" }
@@ -187,6 +233,15 @@ ApplicationWindow {
     function submit(start) {
         let request = {url:addressInput.text.trim(),directory:directoryInput.text,filename:filenameInput.text,
             connections:connections.value,media:infoMedia.checked,format:["best","1080p","720p","audio"][mediaFormat.currentIndex],description:descriptionInput.text,start:start}
+        if (useRequestHeaders.checked) {
+            let custom
+            try { custom=parseHeaders(requestHeadersInput.text) }
+            catch (error) { lastError=error.message; return }
+            let headers={}, inherited=siteForUrl(request.url).headers || {}
+            for (let name of Object.keys(inherited)) headers[name.toLowerCase()]=inherited[name]
+            for (let name of Object.keys(custom)) headers[name.toLowerCase()]=custom[name]
+            request.headers=headers
+        }
         if (useAuthorization.checked) { request.username = loginInput.text; request.password = passwordInput.text }
         let id = win.automationAvailable ? automation.enqueue(request) : backend.addRequest(request)
         if (!id) { lastError = win.automationAvailable ? automation.error : backend.error; return }
@@ -364,7 +419,7 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true; color: win.surface; border.color: win.edge
                 Flickable {
-                    id: tableScroll
+                    id: tableScroll; objectName: "tableScroll"
                     anchors.fill: parent; anchors.margins: 1
                     clip: true; contentWidth: Math.max(width,win.columns.reduce((n,c) => n+c.width,0)); contentHeight: height; flickableDirection: Flickable.HorizontalFlick
                     ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -403,11 +458,22 @@ ApplicationWindow {
                                             required property var modelData
                                             width: modelData.width; height: 25
                                             ClassicIcon { visible: modelData.key === "name"; kind: row.modelData.category === "Video" ? "video" : "file"; width: 16; height: 16; x: 4; anchors.verticalCenter: parent.verticalCenter }
-                                            Text { x: modelData.key === "name" ? 25 : 7; width: parent.width-x-6; height: parent.height; text: win.cell(row.modelData,modelData.key); elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter; color: row.modelData.status === "error" ? "#d96767" : win.ink; font.pixelSize: 11 }
+                                            Text {
+                                                id: cellLabel
+                                                x: modelData.key === "name" ? 25 : 7; width: parent.width-x-6; height: parent.height
+                                                text: win.cell(row.modelData,modelData.key); elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
+                                                color: row.modelData.status === "error" ? "#d96767" : win.ink; font.pixelSize: 11
+                                                ToolTip {
+                                                    objectName: "downloadCellTip"
+                                                    visible: rowMouse.containsMouse && rowMouse.mouseX >= cellLabel.parent.x && rowMouse.mouseX < cellLabel.parent.x+cellLabel.parent.width && cellLabel.truncated
+                                                    delay: 700; text: cellLabel.text; width: Math.min(600,win.width-24)
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 MouseArea {
+                                    id: rowMouse; hoverEnabled: true
                                     anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: mouse => { win.selectedId = row.modelData.id; if (mouse.button === Qt.RightButton) rowMenu.popup() }
                                     onDoubleClicked: { win.selectedId = row.modelData.id; win.openTransfer() }
@@ -484,6 +550,7 @@ ApplicationWindow {
     }
     Dialog {
         id: infoDialog; objectName: "infoDialog"
+        onClosed: { requestHeadersInput.clear(); useRequestHeaders.checked=false }
         title: qsTr("Download File Info"); onRejected: win.droppedUrls = []; modal: true; width: 650; anchors.centerIn: parent
         ColumnLayout {
             anchors.fill: parent; spacing: 9
@@ -502,6 +569,11 @@ ApplicationWindow {
                 ClassicField { id: descriptionInput; objectName: "descriptionInput"; Layout.fillWidth: true }
                 Label { text: qsTr("Connections") }
                 SpinBox { id: connections; from: 1; to: 16; value: 4; editable: true; implicitHeight: 28 }
+            }
+            CheckBox { id: useRequestHeaders; objectName: "useRequestHeaders"; text: qsTr("Additional HTTP headers") }
+            ScrollView {
+                visible: useRequestHeaders.checked; Layout.fillWidth: true; Layout.preferredHeight: 82
+                TextArea { id: requestHeadersInput; objectName: "requestHeadersInput"; selectByMouse: true; font.family: "monospace"; placeholderText: '{"X-Api-Key": "value"}' }
             }
             ComboBox { id: mediaFormat; objectName: "mediaFormat"; visible: infoMedia.checked; model: [qsTr("Best quality"),"1080p","720p",qsTr("Audio only")] }
             CheckBox { id: infoMedia; text: qsTr("Video / audio download"); objectName: "infoMedia" }
@@ -524,7 +596,7 @@ ApplicationWindow {
         id: transferDialog; objectName: "transferDialog"
         title: win.transferJob ? win.statusLabel(win.transferJob)+"  "+win.transferJob.name : qsTr("Download progress")
         onClosed: if (win.running(win.transferJob)) win.controller.pause(win.transferId)
-        modal: false; width: 650; anchors.centerIn: parent
+        modal: false; width: 650; height: Math.min(implicitHeight,win.contentItem.height-12); anchors.centerIn: parent
         ColumnLayout {
             anchors.fill: parent; spacing: 10
             GridLayout {
@@ -568,7 +640,7 @@ ApplicationWindow {
                 }
             }
             Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 135; color: win.surface; border.color: win.edge
+                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 50; Layout.preferredHeight: 135; color: win.surface; border.color: win.edge
                 Flickable {
                     anchors.fill: parent; anchors.margins: 5
                     clip: true; contentWidth: width; contentHeight: connectionRows.implicitHeight
@@ -609,11 +681,12 @@ ApplicationWindow {
         onAccepted: { win.controller.remove(win.selectedId); win.selectedId = "" }
     }
     Dialog {
-        id: optionsDialog; objectName: "optionsDialog"; title: qsTr("Internet Download Manager Configuration"); modal: true; width: 750; anchors.centerIn: parent
+        id: optionsDialog; objectName: "optionsDialog"; title: qsTr("Internet Download Manager Configuration"); modal: true; width: 750; height: Math.min(implicitHeight,win.contentItem.height-12); anchors.centerIn: parent
         onOpened: { win.lastError=""; win.loadOptions() }
+        onClosed: { siteHeaders.clear(); sitePassword.clear(); siteAgent.clear(); siteReferer.clear(); siteStatus.text="" }
         ColumnLayout {
             anchors.fill: parent; spacing: 10
-            TabBar { id: optionsTabs; Layout.fillWidth: true
+            TabBar { id: optionsTabs; objectName: "optionsTabs"; Layout.fillWidth: true
                 TabButton { text: qsTr("General") }
                 TabButton { text: qsTr("Connection") }
                 TabButton { text: qsTr("File types") }
@@ -623,7 +696,7 @@ ApplicationWindow {
                 TabButton { text: qsTr("Browser") }
             }
             StackLayout {
-                currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; implicitHeight: 310
+                currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; implicitHeight: 310
                 ColumnLayout {
                     spacing: 6
                     Label { text: qsTr("General settings"); font.bold: true }
@@ -684,14 +757,23 @@ ApplicationWindow {
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
+                    spacing: 8; Layout.minimumHeight: 0
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: qsTr("Site hostname") }
+                        ClassicField { id: siteHost; objectName: "siteHost"; Layout.fillWidth: true; placeholderText: "example.com" }
+                    }
+                    ScrollView {
+                    id: siteScroll; objectName: "siteScroll"; clip: true; contentWidth: availableWidth
+                    implicitHeight: 275; Layout.minimumHeight: 0; Layout.fillWidth: true; Layout.fillHeight: true
+                    ColumnLayout {
+                    width: siteScroll.availableWidth; spacing: 8
                     GridLayout {
                         columns: 2; Layout.fillWidth: true
-                        Label { text: qsTr("Site hostname") }
-                        ClassicField { id: siteHost; Layout.fillWidth: true; placeholderText: "example.com" }
                         Label { text: qsTr("User agent") }
-                        ClassicField { id: siteAgent; Layout.fillWidth: true }
+                        ClassicField { id: siteAgent; objectName: "siteAgent"; Layout.fillWidth: true }
                         Label { text: qsTr("Referer") }
-                        ClassicField { id: siteReferer; Layout.fillWidth: true }
+                        ClassicField { id: siteReferer; objectName: "siteReferer"; Layout.fillWidth: true }
                         Label { text: qsTr("Save to") }
                         ClassicField { id: siteDirectory; Layout.fillWidth: true }
                         Label { text: qsTr("Connections") }
@@ -703,26 +785,16 @@ ApplicationWindow {
                         Label { text: qsTr("Password") }
                         ClassicField { id: sitePassword; Layout.fillWidth: true; maximumLength: 4096; echoMode: TextInput.Password }
                     }
+                    Label { text: qsTr("Custom HTTP headers (JSON object)"); font.bold: true }
+                    TextArea { id: siteHeaders; objectName: "siteHeaders"; Layout.fillWidth: true; Layout.preferredHeight: 90; selectByMouse: true; font.family: "monospace"; wrapMode: TextEdit.WrapAnywhere; placeholderText: '{"X-Api-Key": "value"}' }
+                    Label { text: qsTr("User-Agent and Referer use the fields above. Other headers are preserved here."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     RowLayout {
-                        ClassicButton { text: qsTr("Load site settings"); enabled: win.automationAvailable; onClicked: {
-                            let site=(win.preferences.siteSettings || {})[siteHost.text.toLowerCase()] || {}
-                            siteLogin.text=site.username || ""; sitePassword.text=site.password || ""
-                            siteDirectory.text=site.directory || ""; siteConnections.value=site.connections || 4; siteProxy.text=site.proxy || ""
-                            siteAgent.text=(site.headers || {})["User-Agent"] || ""; siteReferer.text=(site.headers || {})["Referer"] || ""
-                        } }
-                        ClassicButton { text: qsTr("Save site settings"); enabled: win.automationAvailable; onClicked: {
-                            let sites=Object.assign({},win.preferences.siteSettings || {}), headers={}
-                            if (siteAgent.text) headers["User-Agent"]=siteAgent.text
-                            if (siteReferer.text) headers["Referer"]=siteReferer.text
-                            let site={connections:siteConnections.value,headers:headers}
-                            if (siteDirectory.text) site.directory=siteDirectory.text
-                            if (siteProxy.text) site.proxy=siteProxy.text
-                            if (siteLogin.text) { site.username=siteLogin.text; site.password=sitePassword.text }
-                            sites[siteHost.text.trim().toLowerCase()]=site
-                            if (!automation.configure({siteSettings:sites})) win.lastError=automation.error
-                        } }
+                        ClassicButton { objectName: "loadSiteButton"; text: qsTr("Load site settings"); enabled: win.automationAvailable; onClicked: win.loadSiteSettings() }
+                        ClassicButton { objectName: "saveSiteButton"; text: qsTr("Save site settings"); enabled: win.automationAvailable; onClicked: win.saveSiteSettings() }
                     }
-                    Item { Layout.fillHeight: true }
+                    Label { id: siteStatus; text: ""; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
+                    }
                 }
                 ColumnLayout {
                     spacing: 5

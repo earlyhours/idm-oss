@@ -11,7 +11,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 2,
@@ -24,7 +24,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 3,
@@ -55,7 +55,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 5,
@@ -73,7 +73,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 6,
@@ -91,7 +91,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 7,
@@ -109,7 +109,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 8,
@@ -186,7 +186,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 13,
@@ -199,7 +199,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 14,
@@ -213,21 +213,27 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 15,
       "name": "Expired Download Link Refresh",
       "owner": "automation",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
-        "src/automation.cpp"
+        "src/downloadmanager.cpp",
+        "src/automation.cpp",
+        "browser/background.js",
+        "src/Main.qml"
       ],
       "tests": [
+        "tests/downloadmanager_tests.cpp",
         "tests/automation_tests.cpp",
-        "tests/automation_adversarial_tests.cpp"
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/ui_tests.cpp"
       ],
-      "evidence": "URL refresh is tested; same-URL browser-cookie refresh and arbitrary custom headers need the follow-up fix and explicit regression tests."
+      "evidence": "The engine suite passes 51 checks. Real HTTP 403 recovery with a fresh Cookie, Bearer token and X-Api-Key for the same URL keeps one job and produces matching bytes. UI tests verify site and per-job header delivery, private fields, invalid-input rejection and managed-header filtering."
     },
     {
       "id": 16,
@@ -241,7 +247,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 17,
@@ -255,7 +261,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 18,
@@ -267,9 +273,10 @@
       ],
       "tests": [
         "tests/automation_tests.cpp",
-        "tests/automation_adversarial_tests.cpp"
+        "tests/automation_adversarial_tests.cpp",
+        "tests/final_parity_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 19,
@@ -281,9 +288,10 @@
       ],
       "tests": [
         "tests/automation_tests.cpp",
-        "tests/automation_adversarial_tests.cpp"
+        "tests/automation_adversarial_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 20,
@@ -296,7 +304,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 21,
@@ -310,7 +318,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 22,
@@ -321,9 +329,10 @@
         "src/downloadmanager.cpp"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 23,
@@ -336,7 +345,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 24,
@@ -350,7 +359,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 25,
@@ -381,7 +390,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 27,
@@ -397,9 +406,10 @@
       "tests": [
         "tests/browser_extension_test.mjs",
         "tests/browser_e2e.mjs",
-        "tests/browserbridge_tests.cpp"
+        "tests/browserbridge_tests.cpp",
+        "tests/final_parity_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 28,
@@ -474,7 +484,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 33,
@@ -487,7 +497,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 34,
@@ -500,7 +510,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 35,
@@ -513,7 +523,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 36,
@@ -531,7 +541,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 37,
@@ -544,20 +554,27 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 38,
       "name": "Custom HTTP Headers",
       "owner": "engine",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
-        "src/downloadmanager.cpp"
+        "src/downloadmanager.cpp",
+        "src/automation.cpp",
+        "browser/background.js",
+        "src/Main.qml"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/automation_tests.cpp",
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/ui_tests.cpp"
       ],
-      "evidence": "URL refresh is tested; same-URL browser-cookie refresh and arbitrary custom headers need the follow-up fix and explicit regression tests."
+      "evidence": "The engine suite passes 51 checks. Real HTTP 403 recovery with a fresh Cookie, Bearer token and X-Api-Key for the same URL keeps one job and produces matching bytes. UI tests verify site and per-job header delivery, private fields, invalid-input rejection and managed-header filtering."
     },
     {
       "id": 39,
@@ -570,7 +587,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 40,
@@ -600,7 +617,7 @@
         "tests/system_integration_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect."
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
     },
     {
       "id": 42,
@@ -615,7 +632,7 @@
         "tests/system_integration_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect."
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
     },
     {
       "id": 43,
@@ -630,7 +647,7 @@
         "tests/system_integration_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Omarchy equivalent uses NetworkManager networking off, not legacy dial-up modem control."
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Omarchy equivalent uses NetworkManager networking off, not legacy dial-up modem control. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
     },
     {
       "id": 44,
@@ -658,59 +675,63 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 46,
       "name": "Download Progress Monitoring",
       "owner": "engine",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
         "src/downloadmanager.cpp"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries. Additional explicit snapshot/speed/ETA cases are being added."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 47,
       "name": "Real-Time Download Speed Display",
       "owner": "engine",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
         "src/downloadmanager.cpp"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries. Additional explicit snapshot/speed/ETA cases are being added."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 48,
       "name": "Estimated Download Time",
       "owner": "engine",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
         "src/downloadmanager.cpp"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries. Additional explicit snapshot/speed/ETA cases are being added."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 49,
       "name": "Multiple Connection Management",
       "owner": "engine",
-      "status": "in_progress",
+      "status": "verified",
       "implementation": [
         "src/downloadmanager.cpp"
       ],
       "tests": [
-        "tests/downloadmanager_tests.cpp"
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries. Additional explicit snapshot/speed/ETA cases are being added."
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
     },
     {
       "id": 50,
@@ -723,7 +744,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 51,
@@ -736,7 +757,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 52,
@@ -750,7 +771,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 53,
@@ -764,7 +785,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 54,
@@ -794,7 +815,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 56,
@@ -807,7 +828,7 @@
       "tests": [
         "tests/downloadmanager_tests.cpp"
       ],
-      "evidence": "Fresh engine suite:44 passes; real local transports, output bytes and failure boundaries."
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
     },
     {
       "id": 57,
@@ -851,7 +872,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 60,
@@ -869,7 +890,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 61,
@@ -887,7 +908,7 @@
         "tests/browser_e2e.mjs",
         "tests/browserbridge_tests.cpp"
       ],
-      "evidence": "13 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
     },
     {
       "id": 62,
@@ -928,7 +949,7 @@
         "tests/system_integration_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect."
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
     },
     {
       "id": 65,
@@ -955,7 +976,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 67,
@@ -967,9 +988,10 @@
       ],
       "tests": [
         "tests/automation_tests.cpp",
-        "tests/automation_adversarial_tests.cpp"
+        "tests/automation_adversarial_tests.cpp",
+        "tests/final_parity_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "Accepted requests start automatically by default. Download Later dispatches no HTTP request. This does not claim desktop-login autostart."
     },
     {
       "id": 68,
@@ -984,7 +1006,7 @@
         "tests/system_integration_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect."
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
     },
     {
       "id": 69,
@@ -998,7 +1020,7 @@
         "tests/automation_tests.cpp",
         "tests/automation_adversarial_tests.cpp"
       ],
-      "evidence": "10 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
     },
     {
       "id": 70,
@@ -1014,5 +1036,14 @@
       ],
       "evidence": "5 TLS checks:trusted localCA exact-output success, untrusted certificate/hostname mismatch refusal; ordinary HTTP output and live HTTPS documented."
     }
+  ],
+  "testBounds": [
+    "Power, network, audio and desktop notification effects use isolated executors. ClamAV scans run against actual files.",
+    "Firefox persistent installation needs normal browser approval and signing. The real browser test uses Chromium.",
+    "Schedules run while the app is running. Auto-start means starting accepted downloads, not starting at desktop login.",
+    "Website crawling is static, bounded and restricted to the selected origin. Live and DRM-protected media are unsupported.",
+    "English and Danish are included. Other locales use fallback.",
+    "FTP and media resume by restarting capture. Validated HTTP byte ranges resume from saved bytes.",
+    "The controlled benchmark does not establish original IDM performance parity or a universal Internet speedup."
   ]
 }

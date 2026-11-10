@@ -4,7 +4,7 @@
   const HOST = 'org.earlyhours.idm_native';
   const MAX_SOURCES = 32, MAX_CONTEXTS = 100, MAX_TABS = 256;
   const tabs = new Map();
-  const allowedHeaders = new Set(['cookie', 'referer', 'user-agent', 'origin', 'accept']);
+  const allowedHeaders = new Set(['cookie', 'authorization', 'referer', 'user-agent', 'origin', 'accept', 'accept-language']);
   const mediaPattern = /\.(?:m3u8|mpd|mp4|webm|m4v|mov|mp3|m4a|aac|ogg|wav)(?:[?#]|$)/i;
   let intercept = false, interceptTypes = '*', showPanel = true, panelPosition = 'right';
   const formats = new Set(['best', '1080p', '720p', 'audio']);
@@ -139,8 +139,8 @@
     const headers = {};
     for (const header of details.requestHeaders || []) {
       const name = String(header.name).toLowerCase(), value = header.value;
-      if (!allowedHeaders.has(name) || typeof value !== 'string' || value.length > 65536 || /[\r\n]/.test(value)) continue;
-      const key = { cookie: 'Cookie', referer: 'Referer', 'user-agent': 'User-Agent', origin: 'Origin', accept: 'Accept' }[name];
+      if ((!allowedHeaders.has(name) && !/^x-[a-z0-9!#$%&'*+.^_`|~-]+$/i.test(name)) || typeof value !== 'string' || value.length > 65536 || /[\r\n]/.test(value)) continue;
+      const key = { cookie: 'Cookie', authorization: 'Authorization', 'accept-language': 'Accept-Language', referer: 'Referer', 'user-agent': 'User-Agent', origin: 'Origin', accept: 'Accept' }[name] || header.name;
       headers[key] = value;
     }
     boundedSet(state.contexts, url, { time: Date.now(), headers }, MAX_CONTEXTS);

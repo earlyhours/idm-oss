@@ -163,5 +163,12 @@
   "Login": "Brugernavn",
   "Password": "Adgangskode",
   "Start date and time": "Startdato og -tid",
-  "Stop date and time": "Stopdato og -tid"
+  "Stop date and time": "Stopdato og -tid",
+  "Enter a JSON object with header names and string values.": "Indtast et JSON-objekt med headernavne og tekstværdier.",
+  "Header values must be strings without control characters.": "Headerværdier skal være tekst uden kontroltegn.",
+  "Site settings saved.": "Webstedsindstillinger gemt.",
+  "Additional HTTP headers": "Yderligere HTTP-headere",
+  "Custom HTTP headers (JSON object)": "Brugerdefinerede HTTP-headere (JSON-objekt)",
+  "User-Agent and Referer use the fields above. Other headers are preserved here.": "User-Agent og Referer bruger felterne ovenfor. Andre headere bevares her.",
+  "Use at most 64 headers and 64 KB of JSON text.": "Brug højst 64 headere og 64 KB JSON-tekst."
 }

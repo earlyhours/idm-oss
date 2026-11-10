@@ -15,6 +15,8 @@ const fixtures=path.join(temporary,'fixtures'), browserDownloads=path.join(tempo
 const extensionId='hjjceibkcmhbdlljimdlpbffdllhjhcb';
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const log=[], mediaResults=[];let browser,app,cdp,server;
+const protectedMedia={manifests:0,segments:0,denied:0}, recaptureRequests={accepted:0,denied:0};
+let recaptureProof;
 let referenceFrames;
 const sha256=data=>createHash('sha256').update(data).digest('hex');
 function videoFrames(file){
@@ -53,14 +55,28 @@ try {
   await mkdir(path.join(fixtures,'dash'));
   const hls=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-i',path.join(fixtures,'direct.mp4'),'-c','copy','-hls_time','1','-hls_list_size','0',path.join(fixtures,'hls/stream.m3u8')],{encoding:'utf8'});assert.equal(hls.status,0,hls.stderr);
   const dash=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-i',path.join(fixtures,'direct.mp4'),'-map','0','-c','copy','-seg_duration','1','-use_template','1','-use_timeline','1','-f','dash',path.join(fixtures,'dash/stream.mpd')],{encoding:'utf8'});assert.equal(dash.status,0,dash.stderr);
+  await mkdir(path.join(fixtures,'protected-hls'));
+  for(const name of await readdir(path.join(fixtures,'hls')))await writeFile(path.join(fixtures,'protected-hls',name),await readFile(path.join(fixtures,'hls',name)));
   const payload=Buffer.alloc(128*1024,0x5a);let nativeFileRequests=0;
   server=http.createServer(async(request,response)=>{
     const url=new URL(request.url,'http://localhost');
     if(url.pathname==='/'){
-      response.writeHead(200,{'Content-Type':'text/html','Set-Cookie':'idm_fixture=accepted; Path=/; SameSite=Lax'});
-      response.end('<!doctype html><title>IDM integration fixture</title><h1>Native download test</h1><video controls muted src="/direct.mp4"></video><a id="file" href="/download.bin" download>Download file</a><a id="manifest" href="/hls/intercept.m3u8" download>Download manifest</a><a id="fallback" href="/fallback.bin" download>Fallback file</a><script>fetch("/hls/stream.m3u8");fetch("/dash/stream.mpd");</script>');return;
+      response.writeHead(200,{'Content-Type':'text/html','Set-Cookie':['idm_fixture=accepted; Path=/; SameSite=Lax','idm_recapture=expired; Path=/; SameSite=Lax']});
+      response.end('<!doctype html><title>IDM integration fixture</title><h1>Native download test</h1><video controls muted src="/direct.mp4"></video><a id="file" href="/download.bin" download>Download file</a><a id="manifest" href="/hls/intercept.m3u8" download>Download manifest</a><a id="fallback" href="/fallback.bin" download>Fallback file</a><script>fetch("/hls/stream.m3u8");fetch("/dash/stream.mpd");fetch("/protected-hls/stream.m3u8",{headers:{"X-Api-Key":"fixture-media-key",Authorization:"Bearer fixture-media-token"}});</script>');return;
     }
     if(!request.headers.cookie?.includes('idm_fixture=accepted')){response.writeHead(403);response.end('Cookie required');return;}
+    if(url.pathname.startsWith('/protected-hls/')){
+      if(request.headers['x-api-key']!=='fixture-media-key'||request.headers.authorization!=='Bearer fixture-media-token'){
+        protectedMedia.denied++;response.writeHead(403,{'Cache-Control':'no-store'});response.end('Protected media context required');return;
+      }
+      if(url.pathname.endsWith('.m3u8'))protectedMedia.manifests++;else protectedMedia.segments++;
+    }
+    if(url.pathname==='/recapture.bin'){
+      if(!request.headers.cookie.includes('idm_recapture=fresh')||request.headers['x-api-key']!=='fixture-fresh-key'||request.headers.authorization!=='Bearer fixture-fresh-token'){
+        recaptureRequests.denied++;response.writeHead(403,{'Cache-Control':'no-store'});response.end('Expired request context');return;
+      }
+      recaptureRequests.accepted++;response.writeHead(200,{'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Length':payload.length});response.end(payload);return;
+    }
     if(url.pathname==='/hls/intercept.m3u8'){
       const bytes=await readFile(path.join(fixtures,'hls/stream.m3u8'));
       response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="intercept.m3u8"','Content-Length':bytes.length});
@@ -108,11 +124,37 @@ try {
   const sources=await wait(async()=>{const result=await send({type:'sources'});return result.sources?.some(source=>source.url===origin+'/hls/stream.m3u8')?result:null;},'network HLS detection');
   assert(sources.sources.length>=2);
   await wait(()=>cdp.evaluate(popup,`[...document.getElementById('sources').options].some(o=>o.value===${JSON.stringify(origin+'/hls/stream.m3u8')})`),'popup HLS source');
-  for(const [resource,quality] of [['/hls/stream.m3u8','720p'],['/dash/stream.mpd','1080p']]){
+  for(const [resource,quality] of [['/hls/stream.m3u8','720p'],['/dash/stream.mpd','1080p'],['/protected-hls/stream.m3u8','best']]){
     await wait(async()=>{const result=await send({type:'sources'});return result.sources?.some(source=>source.url===origin+resource);},`network source ${resource}`);
     await cdp.evaluate(popup,`document.getElementById('sources').value=${JSON.stringify(origin+resource)};document.getElementById('quality').value=${JSON.stringify(quality)};document.getElementById('sources').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('download').click()`);
     const captured=await completed(origin+resource);await verifyMedia(captured,quality);
   }
+  assert(protectedMedia.manifests>=2,'Protected HLS must be requested by the browser and native worker');
+  assert(protectedMedia.segments>0,'Native HLS segments must retain custom authorization context');
+  assert.equal(protectedMedia.denied,0,'Protected media lost its captured X-Api-Key or Bearer context');
+  const recaptureUrl=origin+'/recapture.bin', beforeRecapture=(await queue()).length;
+  const expiredStatus=await cdp.evaluate(page,`fetch(${JSON.stringify(recaptureUrl)},{cache:'no-store',headers:{'X-Api-Key':'fixture-expired-key',Authorization:'Bearer fixture-expired-token'}}).then(r=>r.status)`);
+  assert.equal(expiredStatus,403,'The first browser request must really contain expired context');
+  const deniedBeforeNative=recaptureRequests.denied;
+  const firstAcceptance=await send({type:'batch',urls:[recaptureUrl],pageUrl:origin+'/'});
+  assert.equal(firstAcceptance.ok,true,JSON.stringify(firstAcceptance));assert.equal(firstAcceptance.ids?.length,1);assert.equal(firstAcceptance.errors?.length,0);
+  const originalId=firstAcceptance.ids[0];
+  const failed=await wait(async()=>{const item=(await queue()).find(job=>job.id===originalId);return item?.status==='error'?item:null;},'native HTTP403 from captured expired credentials');
+  assert(recaptureRequests.denied>deniedBeforeNative,'The accepted native job must issue its own rejected request');
+  assert.equal((await queue()).filter(job=>job.url===recaptureUrl).length,1);
+  assert.equal((await queue()).length,beforeRecapture+1);
+  assert(await readFile(failed.path).then(()=>false,error=>error.code==='ENOENT'),'A failed authorization response must not be published as a file');
+  const refreshedStatus=await cdp.evaluate(page,`document.cookie='idm_recapture=fresh; Path=/; SameSite=Lax';fetch(${JSON.stringify(recaptureUrl)},{cache:'no-store',headers:{'X-Api-Key':'fixture-fresh-key',Authorization:'Bearer fixture-fresh-token'}}).then(r=>r.status)`);
+  assert.equal(refreshedStatus,200,'The same browser URL must be recaptured with fresh Cookie, X-Api-Key and Authorization');
+  const acceptedBeforeNative=recaptureRequests.accepted;
+  const freshAcceptance=await send({type:'batch',urls:[recaptureUrl],pageUrl:origin+'/'});
+  assert.equal(freshAcceptance.ok,true,JSON.stringify(freshAcceptance));assert.deepEqual(freshAcceptance.ids,[originalId],'Recapture must resume the existing app job');assert.equal(freshAcceptance.errors?.length,0);
+  const recovered=await completed(recaptureUrl);
+  assert.equal(recovered.id,originalId);assert.equal(recovered.path,failed.path);assert.deepEqual(await readFile(recovered.path),payload);
+  assert(recaptureRequests.accepted>acceptedBeforeNative,'A same-ID acknowledgment must cause a fresh successful native request');
+  assert.equal((await queue()).filter(job=>job.url===recaptureUrl).length,1,'Fresh credentials must not create duplicate app jobs');
+  assert.equal((await queue()).length,beforeRecapture+1,'The same URL handoff must preserve the queue count');
+  recaptureProof={id:originalId,initialStatus:failed.status,finalStatus:recovered.status,queueRows:1,sha256:sha256(await readFile(recovered.path)),deniedRequests:recaptureRequests.denied,acceptedRequests:recaptureRequests.accepted};
   const screenshot=await cdp.send('Page.captureScreenshot',{format:'png'},page);await writeFile(path.join(temporary,'media-panel.png'),Buffer.from(screenshot.data,'base64'));
   assert.equal((await send({type:'settings',intercept:true,interceptTypes:'bin,m3u8',showPanel:true,panelPosition:'right'})).ok,true);
   await cdp.evaluate(page,'document.getElementById("file").click()');
@@ -130,8 +172,8 @@ try {
   assert.deepEqual(await readFile(fallback.filename),payload);
   assert(!(await queue()).some(job=>job.url===origin+'/fallback.bin'),'Rejected native handoff must not create a queue job');
   const fallbackStatus=await wait(async()=>{const result=await send({type:'sources'});return /Browser download continues/.test(result.status)?result.status:null;},'visible fallback status');
-  await writeFile(path.join(temporary,'result.json'),JSON.stringify({ok:true,checks:['real extension injection','floating panel capture','cookie context','network HLS and DASH detection','popup quality handoff','playable video and audio','decoded video frame hashes','automatic interception','octet-stream manifest interception','native file content hash','failed native handoff preserves browser download'],media:mediaResults,expectedDecodedVideoSha256:sha256(referenceFrames.join('\n')),expectedFileSha256:sha256(payload),nativeFileSha256:sha256(await readFile(file.path)),browserFallbackSha256:sha256(await readFile(fallback.filename)),fallbackStatus},null,2));
-  console.log('Real Chromium E2E passed: panel capture, cookies, HLS/DASH popup quality, decoded frame hashes, interception and failed-host browser fallback');
+  await writeFile(path.join(temporary,'result.json'),JSON.stringify({ok:true,checks:['real extension injection','floating panel capture','cookie context','network HLS and DASH detection','popup quality handoff','playable video and audio','decoded video frame hashes','automatic interception','octet-stream manifest interception','native file content hash','failed native handoff preserves browser download','protected HLS custom X-Api-Key and Bearer context','same-URL HTTP403 fresh-cookie/header recapture keeps one app job'],protectedMedia,recapture:recaptureProof,media:mediaResults,expectedDecodedVideoSha256:sha256(referenceFrames.join('\n')),expectedFileSha256:sha256(payload),nativeFileSha256:sha256(await readFile(file.path)),browserFallbackSha256:sha256(await readFile(fallback.filename)),fallbackStatus},null,2));
+  console.log('Real Chromium E2E passed: protected HLS headers, same-ID expired-context recovery, decoded media frames, interception and failed-host fallback');
 }finally{
   if(cdp){try{await cdp.send('Browser.close');}catch{}cdp.socket.close();}
   browser?.kill('SIGTERM');app?.kill('SIGTERM');

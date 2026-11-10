@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "checks": [
+    "real extension injection",
+    "floating panel capture",
+    "cookie context",
+    "network HLS and DASH detection",
+    "popup quality handoff",
+    "playable video and audio",
+    "decoded video frame hashes",
+    "automatic interception",
+    "octet-stream manifest interception",
+    "native file content hash",
+    "failed native handoff preserves browser download",
+    "protected HLS custom X-Api-Key and Bearer context",
+    "same-URL HTTP403 fresh-cookie/header recapture keeps one app job"
+  ],
+  "protectedMedia": {
+    "manifests": 5,
+    "segments": 1,
+    "denied": 0
+  },
+  "recapture": {
+    "initialStatus": "error",
+    "finalStatus": "complete",
+    "queueRows": 1,
+    "sha256": "4742cc452b30002f46343efd2714e07f0dd467da4a83d396a025468f5e8ba495",
+    "deniedRequests": 2,
+    "acceptedRequests": 2
+  },
+  "verifiedMediaOutputs": 5,
+  "scope": "Isolated Chromium profile and local HTTP fixtures; no user browser accounts or DRM-protected sources."
+}

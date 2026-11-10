@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/feature-snapshot-tests"
+cd "$ROOT/build/feature-snapshot-tests"
+qmake6 "$ROOT/tests/feature_snapshot_tests.pro"
+make -j2
+./feature_snapshot_tests "$@"

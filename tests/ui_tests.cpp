@@ -139,10 +139,11 @@ private slots:
         int requests = 0;
         int authorizationChallenges = 0;
         int basicAttempts = 0;
+        QVariantMap siteRequestHeaders, jobRequestHeaders;
         connect(&server, &QTcpServer::newConnection, this, [&] {
             while (auto *socket = server.nextPendingConnection()) {
                 connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
-                connect(socket, &QTcpSocket::readyRead, socket, [socket, payload, &requests, &authorizationChallenges, &basicAttempts] {
+                connect(socket, &QTcpSocket::readyRead, socket, [socket, payload, &requests, &authorizationChallenges, &basicAttempts, &siteRequestHeaders, &jobRequestHeaders] {
                     auto request = socket->property("request").toByteArray() + socket->readAll();
                     socket->setProperty("request", request);
                     if (!request.contains("\r\n\r\n")) return;
@@ -153,6 +154,21 @@ private slots:
                         socket->write("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Fixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                         socket->disconnectFromHost();
                         return;
+                    }
+                    const bool perSite = request.startsWith("GET /site-headers.bin ");
+                    const bool perJob = request.startsWith("GET /job-headers.bin ");
+                    if (perSite || perJob) {
+                        QVariantMap headers;
+                        for (const auto &line : request.split('\n')) {
+                            const int colon = line.indexOf(':');
+                            if (colon > 0) headers[QString::fromLatin1(line.left(colon).toLower())] = QString::fromLatin1(line.mid(colon+1).trimmed());
+                        }
+                        if (perSite) siteRequestHeaders = headers; else jobRequestHeaders = headers;
+                        if (headers.value("x-api-key").toString() != (perSite ? "fixture-site-key" : "fixture-job-key")) {
+                            socket->write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                            socket->disconnectFromHost();
+                            return;
+                        }
                     }
                     const bool head = request.startsWith("HEAD ");
                     socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(payload.size())
@@ -287,9 +303,207 @@ private slots:
         QVERIFY(authenticated.open(QIODevice::ReadOnly));
         QCOMPARE(authenticated.readAll(),payload);
         QVERIFY(window->findChild<QObject *>("passwordInput")->property("text").toString().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(transfer,"close"));
+        QVERIFY(QMetaObject::invokeMethod(options,"open"));
+        window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex",4);
+        auto *siteHost=window->findChild<QObject *>("siteHost");
+        auto *siteHeaders=window->findChild<QObject *>("siteHeaders");
+        auto *siteAgent=window->findChild<QObject *>("siteAgent");
+        auto *siteReferer=window->findChild<QObject *>("siteReferer");
+        auto *saveSite=window->findChild<QObject *>("saveSiteButton");
+        auto *loadSite=window->findChild<QObject *>("loadSiteButton");
+        QVERIFY(siteHost && siteHeaders && siteAgent && siteReferer && saveSite && loadSite);
+        siteHost->setProperty("text","127.0.0.1");
+        for (const auto &invalid : QStringList{"not JSON", "[]", "null", "{\"X-Key\": 7}", "{\"X-Key\": \"unsafe\\r\\nvalue\"}"}) {
+            siteHeaders->setProperty("text",invalid);
+            QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
+            QVERIFY(!window->property("lastError").toString().isEmpty());
+            QVERIFY(!automation.preferences().value("siteSettings").toMap().contains("127.0.0.1"));
+        }
+        siteHeaders->setProperty("text","{\"X-Api-Key\":\"fixture-site-key\",\"X-Trace\":\"preserved\",\"uSeR-aGeNt\":\"overridden\"}");
+        siteAgent->setProperty("text","CustomHeadersFixture/1.0");
+        const auto referrer=QString("http://127.0.0.1:%1/source-page").arg(server.serverPort());
+        siteReferer->setProperty("text",referrer);
+        QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
+        QVERIFY2(window->property("lastError").toString().isEmpty(),qPrintable(window->property("lastError").toString()));
+        QVERIFY(QMetaObject::invokeMethod(loadSite,"clicked"));
+        const auto custom=QJsonDocument::fromJson(siteHeaders->property("text").toByteArray()).object();
+        QCOMPARE(custom.value("X-Api-Key").toString(),"fixture-site-key");
+        QVERIFY(!siteHeaders->property("text").toString().toLower().contains("user-agent"));
+        QCOMPARE(siteAgent->property("text").toString(),"CustomHeadersFixture/1.0");
+        QCOMPARE(siteReferer->property("text").toString(),referrer);
+        siteAgent->setProperty("text","");siteReferer->setProperty("text","");
+        QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
+        const auto cleared=automation.preferences().value("siteSettings").toMap().value("127.0.0.1").toMap().value("headers").toMap();
+        QVERIFY(!cleared.contains("User-Agent"));QVERIFY(!cleared.contains("Referer"));
+        QCOMPARE(cleared.value("X-Trace").toString(),"preserved");
+        siteAgent->setProperty("text","CustomHeadersFixture/1.0");siteReferer->setProperty("text",referrer);
+        QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
+        auto *siteScroll=window->findChild<QObject *>("siteScroll");
+        QVERIFY(siteScroll);
+        auto *siteContent=siteScroll->property("contentItem").value<QQuickItem *>();
+        QVERIFY(siteContent);
+        QVERIFY(options->property("height").toReal() < window->height());
+        QTRY_VERIFY(siteContent->property("contentHeight").toReal() > siteContent->height());
+        siteContent->setProperty("contentY",siteContent->property("contentHeight").toReal()-siteContent->height());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-custom-headers.png"));
+        auto *hostItem=qobject_cast<QQuickItem *>(siteHost);
+        QVERIFY(hostItem);
+        const auto hostPosition=hostItem->mapToScene(QPointF());
+        const auto scrollPosition=siteContent->mapToScene(QPointF());
+        QVERIFY(hostPosition.y()>=options->property("y").toReal());
+        QVERIFY2(hostPosition.y()+hostItem->height() <= scrollPosition.y(),
+                 "The site hostname must stay above the scrolling request settings.");
+        QVERIFY(QMetaObject::invokeMethod(options,"close"));
+        QVERIFY(siteHeaders->property("text").toString().isEmpty());
+
+        QTest::keyClick(window,Qt::Key_N,Qt::ControlModifier);
+        QTRY_VERIFY(input->hasActiveFocus());
+        input->setProperty("text",QString("http://127.0.0.1:%1/site-headers.bin").arg(server.serverPort()));
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(information->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(start,"clicked"));
+        QTRY_COMPARE(manager.downloads().size(),2);
+        QTRY_VERIFY(manager.downloads().last().toMap().value("status").toString()=="complete" || manager.downloads().last().toMap().value("status").toString()=="error");
+        QVERIFY2(manager.downloads().last().toMap().value("status").toString()=="complete",qPrintable(manager.downloads().last().toMap().value("error").toString()));
+        QCOMPARE(siteRequestHeaders.value("x-api-key").toString(),"fixture-site-key");
+        QCOMPARE(siteRequestHeaders.value("x-trace").toString(),"preserved");
+        QCOMPARE(siteRequestHeaders.value("user-agent").toString(),"CustomHeadersFixture/1.0");
+        QCOMPARE(siteRequestHeaders.value("referer").toString(),referrer);
+        QFile siteDownload(manager.downloads().last().toMap().value("path").toString());
+        QVERIFY(siteDownload.open(QIODevice::ReadOnly));QCOMPARE(siteDownload.readAll(),payload);
+        QVERIFY(QMetaObject::invokeMethod(transfer,"close"));
+
+        QTest::keyClick(window,Qt::Key_N,Qt::ControlModifier);
+        QTRY_VERIFY(input->hasActiveFocus());
+        input->setProperty("text",QString("http://127.0.0.1:%1/job-headers.bin").arg(server.serverPort()));
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(information->property("visible").toBool());
+        auto *requestHeaders=window->findChild<QObject *>("requestHeadersInput");
+        auto *useHeaders=window->findChild<QObject *>("useRequestHeaders");
+        QVERIFY(requestHeaders && useHeaders);
+        useHeaders->setProperty("checked",true);
+        requestHeaders->setProperty("text","{\"X-Api-Key\": 7}");
+        QVERIFY(QMetaObject::invokeMethod(start,"clicked"));
+        QCOMPARE(manager.downloads().size(),2);
+        QVERIFY(information->property("visible").toBool());
+        QVERIFY(!window->property("lastError").toString().isEmpty());
+        requestHeaders->setProperty("text","{\"x-api-key\":\"fixture-job-key\",\"X-Request\":\"job-only\"}");
+        QVERIFY(QMetaObject::invokeMethod(start,"clicked"));
+        QTRY_COMPARE(manager.downloads().size(),3);
+        QTRY_VERIFY(manager.downloads().last().toMap().value("status").toString()=="complete" || manager.downloads().last().toMap().value("status").toString()=="error");
+        QVERIFY2(manager.downloads().last().toMap().value("status").toString()=="complete",qPrintable(manager.downloads().last().toMap().value("error").toString()));
+        QCOMPARE(jobRequestHeaders.value("x-api-key").toString(),"fixture-job-key");
+        QCOMPARE(jobRequestHeaders.value("x-trace").toString(),"preserved");
+        QCOMPARE(jobRequestHeaders.value("x-request").toString(),"job-only");
+        QVERIFY(requestHeaders->property("text").toString().isEmpty());
+        QVERIFY(!useHeaders->property("checked").toBool());
+        QVERIFY(!QJsonDocument::fromVariant(manager.downloads()).toJson().contains("fixture-site-key"));
+        QVERIFY(!QJsonDocument::fromVariant(manager.downloads()).toJson().contains("fixture-job-key"));
         QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join('\n')));
         QVERIFY2(qmlWarnings.isEmpty(), qPrintable(qmlWarnings.join('\n')));
         qApp->removeTranslator(&translator);
+    }
+
+    void minimumWindowAndLargeQueue() {
+        qmlWarnings.clear();
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        QVERIFY(writeFile(temporary.filePath("language"), "en\n"));
+        Theme theme(temporary.path());
+        Translator translator(temporary.filePath("language"));
+        DownloadManager manager(temporary.filePath("state"));
+        Automation automation(&manager, temporary.filePath("state"), nullptr,
+                              [](const QStringList &, std::function<void(int,const QString &)> done) { done(0, {}); });
+        QVERIFY(automation.configure({{"notifications",false},{"sound",false}}));
+        PortalPicker picker;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("picker", &picker);
+        engine.rootContext()->setContextProperty("automation", &automation);
+        engine.rootContext()->setContextProperty("backend", &manager);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.load(QUrl("qrc:/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(820,500);
+        window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_VERIFY(window->isActive());
+        QStringList ids;
+        QString lastName;
+        for (int i=0;i<80;++i) {
+            lastName=QString("Archive %1 - ").arg(i,2,10,QChar('0'))+QString(140,'x')+".zip";
+            const auto id=manager.addRequest({{"url",QString("https://downloads.example/%1.zip").arg(i)},
+                                             {"filename",lastName},{"description",QString(200,'d')},
+                                             {"directory",temporary.filePath("files")},{"start",false}});
+            QVERIFY2(!id.isEmpty(),qPrintable(manager.error()));
+            ids<<id;
+        }
+        window->setProperty("sortKey","name");
+        window->setProperty("descending",false);
+        window->setProperty("selectedId",ids.first());
+        auto *table=window->findChild<QQuickItem *>("downloadTable");
+        QVERIFY(table);
+        QTRY_COMPARE(table->property("count").toInt(),80);
+        for (int i=1;i<80;++i) QTest::keyClick(window,Qt::Key_Down);
+        QTRY_COMPARE(window->property("selectedId").toString(),ids.last());
+        QTRY_VERIFY(table->property("contentY").toReal()>0);
+        auto *name=qobject_cast<QQuickItem *>(withProperty(table,"text",lastName));
+        QVERIFY(name);
+        QVERIFY(name->property("truncated").toBool());
+        const auto rowPosition=name->mapToItem(table,QPointF());
+        QVERIFY(rowPosition.y()>=0 && rowPosition.y()+name->height()<=table->height());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum.png"));
+        QTest::mouseMove(window,name->mapToScene(QPointF(name->width()/2,name->height()/2)).toPoint());
+        auto *tip=name->findChild<QObject *>("downloadCellTip");
+        QVERIFY(tip);
+        QTRY_VERIFY_WITH_TIMEOUT(tip->property("visible").toBool(),2000);
+        QCOMPARE(tip->property("text").toString(),lastName);
+        QVERIFY(window->grabWindow().save("/tmp/idm-native-long-name-tooltip.png"));
+        QTest::mouseMove(window,QPoint(5,5));
+        auto *horizontal=window->findChild<QQuickItem *>("tableScroll");
+        QVERIFY(horizontal);
+        QVERIFY(horizontal->property("contentWidth").toReal()>horizontal->width());
+        horizontal->setProperty("contentX",horizontal->property("contentWidth").toReal()-horizontal->width());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum-scrolled.png"));
+        horizontal->setProperty("contentX",0);
+        QTest::keyClick(window,Qt::Key_Return);
+        auto *transfer=window->findChild<QObject *>("transferDialog");
+        QVERIFY(transfer);
+        QTRY_VERIFY(transfer->property("visible").toBool());
+        QVERIFY(transfer->property("width").toReal()<=window->width());
+        QVERIFY(transfer->property("height").toReal()<=window->height());
+        auto *closeButton=qobject_cast<QQuickItem *>(withProperty(transfer,"text","Close"));
+        QVERIFY(closeButton);
+        QTRY_VERIFY(closeButton->mapToScene(QPointF(0,closeButton->height())).y()<=window->height());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-native-long-name.png"));
+        QVERIFY(QMetaObject::invokeMethod(transfer,"close"));
+        auto *options=window->findChild<QObject *>("optionsDialog");
+        QVERIFY(options);
+        QVERIFY(QMetaObject::invokeMethod(options,"open"));
+        window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex",4);
+        window->findChild<QObject *>("siteHost")->setProperty("text","downloads.example");
+        auto *scroll=window->findChild<QObject *>("siteScroll");
+        QVERIFY(scroll);
+        auto *content=scroll->property("contentItem").value<QQuickItem *>();
+        QVERIFY(content);
+        content->setProperty("contentY",content->property("contentHeight").toReal()-content->height());
+        QTest::qWait(50);
+        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum-sites.png"));
+        QVERIFY(options->property("height").toReal()<=window->height());
+        auto *host=qobject_cast<QQuickItem *>(window->findChild<QObject *>("siteHost"));
+        auto *save=qobject_cast<QQuickItem *>(window->findChild<QObject *>("saveSiteButton"));
+        QVERIFY(host && save);
+        QVERIFY(host->mapToScene(QPointF()).y()>=0);
+        QVERIFY(host->mapToScene(QPointF(0,host->height())).y()<=content->mapToScene(QPointF()).y());
+        QVERIFY(save->mapToScene(QPointF(0,save->height())).y()<=window->height());
+        QVERIFY2(qmlWarnings.isEmpty(),qPrintable(qmlWarnings.join('\n')));
     }
 
     void automationDialogsAndPolicies() {

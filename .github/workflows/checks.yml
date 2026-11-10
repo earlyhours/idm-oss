@@ -6,7 +6,7 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install free build tools
-        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify
       - uses: actions/checkout@v4
       - name: Build
         run: bin/build
@@ -30,10 +30,18 @@ jobs:
         run: bin/test-tls
       - name: Media quality variants
         run: python tests/media_quality_test.py
+      - name: Update official antivirus definitions
+        run: freshclam --stdout
       - name: Scanner and completion integration
         run: bin/test-system
       - name: Real browser capture
         run: node tests/browser_e2e.mjs
+      - name: Progress and concurrency snapshots
+        run: bin/test-features
+      - name: Batch acceptance and automatic start
+        run: bin/test-parity
+      - name: Feature coverage ledger
+        run: python tools/check_feature_coverage.py
       - name: Command line
         run: python tests/cli_test.py
       - name: Static tooling
