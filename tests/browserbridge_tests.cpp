@@ -74,6 +74,19 @@ private slots:
     QVERIFY(host.waitForFinished());
     QCOMPARE(host.exitCode(), 0);
   }
+  void idlePingDoesNotLaunchApp() {
+    QTemporaryDir temporary;
+    QProcess host;
+    host.start(binary(), {"browser-host", "--state-directory", temporary.path()});
+    QVERIFY(host.waitForStarted());
+    host.write(frame("{\"command\":\"ping\"}"));
+    const auto result = response(host);
+    QCOMPARE(result.value("ok").toBool(), true);
+    QCOMPARE(result.value("running").toBool(), false);
+    QVERIFY(!QFileInfo::exists(BrowserBridge::socketPath(temporary.path())));
+    host.closeWriteChannel();
+    QVERIFY(host.waitForFinished());
+  }
   void malformedAndOversizeFramesFail() {
     QTemporaryDir temporary;
     QProcess host;

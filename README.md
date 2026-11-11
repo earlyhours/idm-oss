@@ -30,7 +30,7 @@ The implementation uses Qt/C++ conventions for Omarchy. The [investigation](docs
 
 **Scheduler** manages named queues and start/stop/repeat times. Jobs have priorities; queues have concurrency limits. Import/export supports a private JSON list or plain URL lines. **Website Grabber** performs a bounded, same-origin static crawl, rewrites links for offline use, and supports conditional periodic synchronization.
 
-Schedules execute while the app is running. Closing it pauses transfers and saves state. Shutdown and network disconnect are opt-in, have a cancelable countdown, and are blocked if scanning fails or other work begins.
+Schedules execute while the app is running. Closing its window keeps transfers running in the background. Use Tasks > Exit or Ctrl+Q to pause transfers, save state and quit. Shutdown and network disconnect are opt-in, have a cancelable countdown, and are blocked if scanning fails or other work begins.
 
 English and Danish are included, with locale and RTL fallback. The interface keeps IDM's menus, categories and download workflows in a new graphite-and-orange design based on the requested a.yash0.in style. Dark mode is the default; a warm light mode is available. Omarchy language and keyboard-focus accent update live.
 
@@ -49,6 +49,8 @@ idm-native browser-install
 ```
 
 The command registers the user-scoped native messaging host and prints the unpacked Chromium extension directory. Open `chrome://extensions`, enable developer mode, and load that directory. This is the normal one-time browser enablement step. The in-app browser integration panel provides the same installation action.
+
+Opening the extension popup checks the native host without opening the app. A download starts IDM with its window hidden; launching IDM later shows that same queue. YouTube watch pages and homepage links appear as selectable video pages, including blob-based players.
 
 The extension adds context-menu capture, optional browser-download interception, page-link batching, media source detection and a floating **Download this video** panel. Choose Best, 1080p, 720p or audio-only output. Captured cookies, authorization and custom headers stay private and tied to the source origin. The browser download is canceled only after the native app accepts it; failed handoff leaves the browser download running.
 

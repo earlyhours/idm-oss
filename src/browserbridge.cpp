@@ -2,12 +2,10 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
 #include <QProcess>
-#include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
 #include <QtEndian>
@@ -39,9 +37,6 @@ QString shareDirectory() {
 }
 QVariantMap failure(const QString &message) {
   return {{"ok", false}, {"error", message}};
-}
-QString shellQuote(QString value) {
-  return "'" + value.replace("'", "'\"'\"'") + "'";
 }
 } // namespace
 
@@ -91,9 +86,10 @@ BrowserBridge::BrowserBridge(const QString &state, Handler callback,
         QVariantMap result;
         if (command == "ping")
           result = {{"ok", true},
+                    {"running", true},
                     {"name", "IDM Native"},
                     {"version", QCoreApplication::applicationVersion()}};
-        else if (command == "download" || command == "batch")
+        else if (command == "download" || command == "batch" || command == "show")
           result = handler(request);
         else
           result = ::failure(tr("Unsupported browser command."));
@@ -162,22 +158,20 @@ int BrowserBridge::nativeHost(const QString &state, const QString &executable) {
     socket.connectToServer(socketPath(state));
     if (!socket.waitForConnected(300)) {
       socket.abort();
-      const auto hyprctl = QStandardPaths::findExecutable("hyprctl");
-      if (hyprctl.isEmpty() ||
-          qEnvironmentVariableIsEmpty("HYPRLAND_INSTANCE_SIGNATURE")) {
-        if (!reply(
-                ::failure("Open IDM Native before sending browser downloads.")))
+      const auto command = request.value("command").toString();
+      if (command == "ping") {
+        if (!reply({{"ok", true}, {"running", false}, {"name", "IDM Native"}}))
           return 1;
         continue;
       }
-      const QString cmd = "[workspace 5 silent] " + shellQuote(executable) +
-                          " open --state-directory " + shellQuote(state);
-      auto quoted = QString::fromUtf8(
-          QJsonDocument(QJsonArray{cmd}).toJson(QJsonDocument::Compact));
-      quoted = quoted.mid(1, quoted.size() - 2);
-      if (!QProcess::startDetached(
-              hyprctl, {"dispatch", "hl.dsp.exec_cmd(" + quoted + ")"})) {
-        if (!reply(::failure("Could not start IDM Native.")))
+      if (command != "download" && command != "batch") {
+        if (!reply(::failure("Unsupported browser command.")))
+          return 1;
+        continue;
+      }
+      if (!QProcess::startDetached(executable,
+                                  {"background", "--state-directory", state})) {
+        if (!reply(::failure("Could not start IDM Native in the background.")))
           return 1;
         continue;
       }

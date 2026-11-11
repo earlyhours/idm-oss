@@ -6,7 +6,7 @@ ApplicationWindow {
     id: win
     width: 1220; height: 760
     minimumWidth: 820; minimumHeight: 500
-    visible: true
+    visible: typeof startHidden === "undefined" || !startHidden
     title: qsTr("Internet Download Manager")
     color: win.canvas
     font.family: "Adwaita Sans"
@@ -284,9 +284,9 @@ ApplicationWindow {
         selectedId = shown[Math.max(0,Math.min(shown.length-1,index+delta))].id
         rows.positionViewAtIndex(Math.max(0,index+delta), ListView.Contain)
     }
-    onClosing: win.controller.pauseAll()
+    onClosing: function(event) { event.accepted = false; win.hide() }
     Shortcut { sequence: "Ctrl+N"; onActivated: win.newDownload() }
-    Shortcut { sequence: "Ctrl+Q"; onActivated: win.close() }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: { win.controller.pauseAll(); Qt.quit() } }
     Shortcut { sequence: "Delete"; enabled: !win.editing && !transferDialog.visible; onActivated: win.deleteSelected() }
     Shortcut { sequence: "Space"; enabled: !win.editing && !transferDialog.visible; onActivated: win.toggleSelected() }
     Shortcut { sequence: "Return"; enabled: !win.editing && !!win.selected && !transferDialog.visible; onActivated: win.openTransfer() }
@@ -374,17 +374,39 @@ ApplicationWindow {
         id: tool
         property string kind: "add"
         implicitWidth: contentItem.implicitWidth+20; implicitHeight: 34
+        Accessible.name: text
         padding: 6; hoverEnabled: true
         background: Rectangle { color: tool.down ? win.selection : tool.hovered ? win.hoverSurface : "transparent"; border.color: tool.activeFocus ? theme.accent : "transparent"; radius: win.controlRadius }
-        contentItem: Row {
+        contentItem: RowLayout {
             spacing: 7; opacity: tool.enabled ? 1 : .3
-            AppIcon { kind: tool.kind; tint: win.muted; width: 17; height: 17; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; anchors.verticalCenter: parent.verticalCenter }
+            AppIcon { kind: tool.kind; tint: win.muted; Layout.preferredWidth: 17; Layout.preferredHeight: 17; Layout.alignment: Qt.AlignVCenter }
+            Text { text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; Layout.alignment: Qt.AlignVCenter }
         }
         ToolTip.visible: hovered
         ToolTip.text: text
     }
     menuBar: MenuBar {
+        objectName: "mainMenuBar"
+        leftPadding: 16; rightPadding: 16; topPadding: 3; bottomPadding: 3
+        spacing: 2
+        background: Rectangle {
+            color: win.panel
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.edge }
+        }
+        delegate: MenuBarItem {
+            id: menuItem
+            implicitWidth: menuLabel.implicitWidth + 24; implicitHeight: 30
+            contentItem: Text {
+                id: menuLabel
+                text: menuItem.text; font.pixelSize: 12; color: win.ink
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                radius: win.controlRadius
+                color: menuItem.highlighted ? win.hoverSurface : "transparent"
+                border.color: menuItem.activeFocus ? theme.accent : "transparent"
+            }
+        }
         Menu { title: qsTr("Tasks")
             Action { text: qsTr("Add URL"); onTriggered: win.newDownload() }
             MenuSeparator {}
@@ -392,7 +414,7 @@ ApplicationWindow {
             Action { text: qsTr("Export downloads"); enabled: win.automationAvailable; onTriggered: { listDialog.importing=false; listDialog.open() } }
             Action { text: qsTr("Site Grabber"); enabled: win.automationAvailable; onTriggered: grabberDialog.open() }
             MenuSeparator {}
-            Action { text: qsTr("Exit"); onTriggered: win.close() }
+            Action { text: qsTr("Exit"); onTriggered: { win.controller.pauseAll(); Qt.quit() } }
         }
         Menu { title: qsTr("Downloads")
             Action { text: qsTr("Resume"); enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onTriggered: win.controller.resume(win.selectedId) }
@@ -521,23 +543,30 @@ ApplicationWindow {
                 Layout.fillWidth: true; Layout.preferredHeight: 49; color: win.canvas
                 Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: win.edge }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.edge }
-                Flickable {
-                    anchors.fill: parent; anchors.leftMargin: 18; anchors.rightMargin: 18
-                    contentWidth: commandRow.implicitWidth; contentHeight: height; clip: true; flickableDirection: Flickable.HorizontalFlick
-                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded; active: parent.contentWidth > parent.width }
-                    Row {
-                        id: commandRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                        Tool { text: qsTr("Resume"); kind: "resume"; enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onClicked: win.controller.resume(win.selectedId) }
-                        Tool { text: qsTr("Stop"); kind: "stop"; enabled: win.running(win.selected); onClicked: win.controller.pause(win.selectedId) }
-                        Tool { text: qsTr("Stop All"); kind: "stopall"; onClicked: win.controller.pauseAll() }
-                        Rectangle { width: 1; height: 18; color: win.edge; anchors.verticalCenter: parent.verticalCenter }
-                        Tool { text: qsTr("Delete"); kind: "delete"; enabled: !!win.selected; onClicked: win.deleteSelected() }
-                        Tool { objectName: "deleteCompletedButton"; text: qsTr("Delete Completed"); kind: "completed"; onClicked: win.controller.removeCompleted() }
-                        Rectangle { width: 1; height: 18; color: win.edge; anchors.verticalCenter: parent.verticalCenter }
-                        Tool { objectName: "startQueueButton"; text: qsTr("Start Queue"); kind: "queue"; onClicked: win.startQueue() }
-                        Tool { text: qsTr("Stop Queue"); kind: "queueStop"; onClicked: win.stopQueue() }
-                        Tool { text: qsTr("Scheduler"); kind: "queue"; enabled: win.automationAvailable; onClicked: schedulerDialog.open() }
-                        Tool { text: qsTr("Options"); kind: "options"; onClicked: optionsDialog.open() }
+                RowLayout {
+                    objectName: "downloadToolbar"
+                    anchors.fill: parent; anchors.leftMargin: 26; anchors.rightMargin: 26; spacing: 2
+                    Tool { objectName: "resumeButton"; text: qsTr("Resume"); kind: "resume"; enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onClicked: win.controller.resume(win.selectedId) }
+                    Tool { text: qsTr("Stop"); kind: "stop"; enabled: win.running(win.selected); onClicked: win.controller.pause(win.selectedId) }
+                    Tool { text: qsTr("Delete"); kind: "delete"; enabled: !!win.selected; onClicked: win.deleteSelected() }
+                    Rectangle { Layout.leftMargin: 6; Layout.rightMargin: 6; width: 1; height: 18; color: win.edge }
+                    Tool { objectName: "startQueueButton"; text: qsTr("Start Queue"); kind: "queue"; onClicked: win.startQueue() }
+                    Item { Layout.fillWidth: true }
+                    Tool {
+                        id: moreButton
+                        objectName: "moreActionsButton"
+                        text: qsTr("More"); kind: "chevron"
+                        onClicked: moreActions.popup(moreButton, 0, moreButton.height)
+                        Menu {
+                            id: moreActions
+                            objectName: "moreActionsMenu"
+                            MenuItem { text: qsTr("Options"); onTriggered: optionsDialog.open() }
+                            MenuItem { text: qsTr("Stop All"); onTriggered: win.controller.pauseAll() }
+                            MenuItem { objectName: "deleteCompletedButton"; text: qsTr("Delete Completed"); onTriggered: win.controller.removeCompleted() }
+                            MenuSeparator {}
+                            MenuItem { text: qsTr("Stop Queue"); onTriggered: win.stopQueue() }
+                            MenuItem { text: qsTr("Scheduler"); enabled: win.automationAvailable; onTriggered: schedulerDialog.open() }
+                        }
                     }
                 }
             }

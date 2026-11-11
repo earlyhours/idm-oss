@@ -57,7 +57,7 @@
   }
   function record(tabId, value) {
     const state = tabState(tabId), url = httpUrl(value.url);
-    if (!state || !url) return;
+    if (!state || !url || /(^|\.)googlevideo\.com$/.test(new URL(url).hostname)) return;
     const old = state.sources.get(url);
     const source = { url, filename: filename(url), media: true,
       mime: typeof value.mime === 'string' ? value.mime.slice(0, 200) : old?.mime || '',

@@ -32,7 +32,7 @@
   async function ping() {
     byId('connection').textContent = 'Checking native app…';
     const response = await send({ type: 'ping' });
-    byId('connection').textContent = response.ok ? 'Connected to the native Omarchy app.' : `Connection failed: ${response.error}. Install the native host from IDM’s browser integration settings.`;
+    byId('connection').textContent = response.ok ? (response.running === false ? 'Ready. Downloads start IDM in the background.' : 'Connected to the native Omarchy app.') : `Connection failed: ${response.error}. Install the native host from IDM’s browser integration settings.`;
   }
   byId('check').addEventListener('click', ping);
   byId('sources').addEventListener('change', () => { byId('download').disabled = !byId('sources').value; });

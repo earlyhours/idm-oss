@@ -128,6 +128,26 @@ private slots:
         const QRectF headerButton = addDownload->mapRectToScene(addDownload->boundingRect());
         QVERIFY(headerButton.width() > 0 && headerButton.height() > 0);
         QVERIFY2(QRectF(0, 0, window->width(), window->height()).contains(headerButton), "The header Add URL button must be visible inside the window.");
+        auto *toolbar = window->findChild<QQuickItem *>("downloadToolbar");
+        auto *moreButton = window->findChild<QQuickItem *>("moreActionsButton");
+        QVERIFY(toolbar && moreButton);
+        for (const int width : {820, 1220}) {
+            window->setWidth(width);
+            QTest::qWait(50);
+            QRectF previous;
+            for (auto *child : toolbar->childItems()) {
+                if (!child->isVisible() || child->height() <= 0) continue;
+                const auto rect = child->mapRectToScene(child->boundingRect());
+                QVERIFY2(QRectF(0, 0, window->width(), window->height()).contains(rect), qPrintable(QString("Toolbar child %1 %2: x=%3 y=%4 width=%5 height=%6 window=%7x%8").arg(child->metaObject()->className()).arg(child->objectName()).arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height()).arg(window->width()).arg(window->height())));
+                QVERIFY2(previous.isNull() || previous.right() <= rect.left(), "Toolbar actions must not overlap.");
+                previous = rect;
+            }
+        }
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, moreButton->mapToScene(moreButton->boundingRect().center()).toPoint());
+        auto *moreMenu = window->findChild<QObject *>("moreActionsMenu");
+        QVERIFY(moreMenu);
+        QTRY_VERIFY(moreMenu->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(moreMenu, "close"));
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, headerButton.center().toPoint());
         auto *input = window->findChild<QQuickItem *>("urlInput");
         QVERIFY(input);
@@ -324,7 +344,7 @@ private slots:
         QVERIFY(QFile::exists(queuedPath));
         auto *deleteCompleted = window->findChild<QObject *>("deleteCompletedButton");
         QVERIFY(deleteCompleted);
-        QVERIFY(QMetaObject::invokeMethod(deleteCompleted, "clicked"));
+        QVERIFY(QMetaObject::invokeMethod(deleteCompleted, "triggered"));
         QTRY_VERIFY(manager.downloads().isEmpty());
         QVERIFY(QFile::exists(downloaded.fileName()));
         QTest::keyClick(window, Qt::Key_N, Qt::ControlModifier);

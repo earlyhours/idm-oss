@@ -16,7 +16,23 @@
   }
   function detect() {
     const found = new Map();
+    const page = new URL(document.baseURI);
+    const youtube = /^(www\.|m\.)?youtube\.com$/.test(page.hostname);
+    if (youtube) {
+      const add = (value, label) => {
+        const url = new URL(value, document.baseURI);
+        const id = url.pathname === '/watch' ? url.searchParams.get('v') : url.pathname.match(/^\/shorts\/([\w-]+)/)?.[1];
+        if (/^[\w-]{11}$/.test(id || '') && found.size < 32)
+          found.set(`https://www.youtube.com/watch?v=${id}`, {url: `https://www.youtube.com/watch?v=${id}`, label: label || 'YouTube video'});
+      };
+      add(page.href, document.title);
+      for (const link of document.querySelectorAll('a[href]')) {
+        if (new URL(link.href, document.baseURI).origin === page.origin)
+          add(link.href, link.title || link.textContent?.trim());
+      }
+    }
     for (const element of document.querySelectorAll('video,audio,video source,audio source')) {
+      if (youtube) break;
       const url = http(element.currentSrc || element.src);
       if (!url) continue;
       const video = element.tagName === 'VIDEO' || element.closest?.('video');
@@ -93,5 +109,6 @@
   });
   observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
   document.addEventListener('loadedmetadata', detect, true);
+  document.addEventListener('yt-navigate-finish', detect);
   detect();
 })();

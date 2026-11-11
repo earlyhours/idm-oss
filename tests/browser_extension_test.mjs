@@ -179,10 +179,10 @@ class Element {
   set value(value){this._value=value;}
 }
 function descendants(element){return[element,...element.children.flatMap(descendants),...(element.shadowRoot?descendants(element.shadowRoot):[])];}
-function page(){
+function page(baseURI="https://page.test/watch", extraLinks=[]){
   const html=new Element('html'),video=new Element('video');video.src='https://media.test/movie.mp4';video.videoWidth=1280;video.videoHeight=720;
-  const anchors=[{href:'https://files.test/a.zip'},{href:'javascript:alert(1)'},{href:'https://files.test/a.zip'},{href:'https://files.test/b.pdf'}];
-  const document={documentElement:html,baseURI:'https://page.test/watch',title:'Page',events:{},createElement:tag=>new Element(tag),getElementById:id=>descendants(html).find(el=>el.id===id),querySelectorAll:selector=>selector==='a[href]'?anchors:[video],addEventListener(name,fn){this.events[name]=fn;}};
+  const anchors=[...extraLinks,{href:'https://files.test/a.zip'},{href:'javascript:alert(1)'},{href:'https://files.test/a.zip'},{href:'https://files.test/b.pdf'}];
+  const document={documentElement:html,baseURI,title:'Page',events:{},createElement:tag=>new Element(tag),getElementById:id=>descendants(html).find(el=>el.id===id),querySelectorAll:selector=>selector==='a[href]'?anchors:[video],addEventListener(name,fn){this.events[name]=fn;}};
   const calls=[],listeners=[];
   const chrome={runtime:{lastError:undefined,onMessage:{addListener(fn){listeners.push(fn);}},sendMessage(message,callback){calls.push(plain(message));callback(message.type==='download'?{ok:true,id:'media-id'}:{ok:true,sources:[{url:'https://media.test/master.m3u8',label:'Network HLS',mime:'application/vnd.apple.mpegurl'}],showPanel:true,panelPosition:'right'});}}};
   const window={};window.top=window;
@@ -210,3 +210,14 @@ test('blob player still shows network manifest choices instead of handing off a 
   const button=descendants(p.html).find(el=>el.textContent==='Download');button.click();
   assert.equal(p.calls.at(-1).url,'https://media.test/master.m3u8');
 });
+
+ test('YouTube watch and homepage sources use complete video pages, not blob streams',()=>{
+  const watch=page('https://www.youtube.com/watch?v=BaW_jenozKc');
+  assert.equal(watch.calls[0].sources[0].url,'https://www.youtube.com/watch?v=BaW_jenozKc');
+  const home=page('https://www.youtube.com/',[{href:'https://www.youtube.com/watch?v=BaW_jenozKc',title:'Example video'},{href:'https://www.youtube.com/watch?v=bad'}]);
+  assert.deepEqual(home.calls[0].sources,[{url:'https://www.youtube.com/watch?v=BaW_jenozKc',label:'Example video'}]);
+ });
+ test('YouTube network fragments never become standalone download choices',async()=>{
+  const w=worker();w.response('https://rr1.googlevideo.com/videoplayback?id=fragment','video/mp4');
+  assert.deepEqual((await w.message({type:'sources',tabId:7})).sources,[]);
+ });

@@ -5,6 +5,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocalSocket>
+#include <QtEndian>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -25,6 +27,7 @@ static void printJson(const QVariantMap &value, bool error = false) {
 }
 
 int main(int argc, char **argv) {
+    const auto originalPlatform = qgetenv("QT_QPA_PLATFORM");
     const bool headless = argc > 1 && (QString(argv[1]) == "download" || QString(argv[1]) == "skill" || QString(argv[1]) == "browser-host" || QString(argv[1]) == "browser-install");
     if (headless) qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
@@ -36,7 +39,7 @@ int main(int argc, char **argv) {
     parser.setApplicationDescription("Native HTTP download manager for Omarchy");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("command", "open, download URL, browser-host, browser-install, or skill install", "[command] [URL]");
+    parser.addPositionalArgument("command", "open, background, download URL, browser-host, browser-install, or skill install", "[command] [URL]");
     parser.addOptions({{{"d", "directory"}, "Download directory", "path"},
                        {{"c", "connections"}, "Parallel connections (1-16)", "count", "4"},
                        {"json", "Print machine-readable results"},
@@ -55,12 +58,29 @@ int main(int argc, char **argv) {
         printJson({{"path", path}});
         return 0;
     }
-    if (command != "open" && command != "download" && command != "browser-host" && command != "browser-install") { parser.showHelp(1); }
+    if (command != "open" && command != "background" && command != "download" && command != "browser-host" && command != "browser-install") { parser.showHelp(1); }
     QString state = parser.value("state-directory");
     if (state.isEmpty()) state = qEnvironmentVariable("IDM_NATIVE_STATE_DIRECTORY");
     if (state.isEmpty()) state = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (!QDir().mkpath(state)) { printJson({{"error", "Cannot create queue directory"}}, true); return 1; }
-    if (command == "browser-host") return BrowserBridge::nativeHost(state, QCoreApplication::applicationFilePath());
+    if (command == "browser-host") {
+        if (originalPlatform.isEmpty()) qunsetenv("QT_QPA_PLATFORM");
+        else qputenv("QT_QPA_PLATFORM", originalPlatform);
+        return BrowserBridge::nativeHost(state, QCoreApplication::applicationFilePath());
+    }
+    if (command == "open") {
+        QLocalSocket existing;
+        existing.connectToServer(BrowserBridge::socketPath(state));
+        if (existing.waitForConnected(300)) {
+            const QByteArray message = "{\"command\":\"show\"}";
+            QByteArray bytes(4, '\0');
+            qToLittleEndian<quint32>(message.size(), bytes.data());
+            existing.write(bytes + message);
+            existing.waitForBytesWritten(1000);
+            existing.waitForReadyRead(1000);
+            return 0;
+        }
+    }
     if (command == "browser-install") {
         BrowserBridge installer(state, {}, false);
         const auto path = installer.install();
@@ -96,7 +116,12 @@ int main(int argc, char **argv) {
         return app.exec();
     }
     Automation automation(&manager,state);
+    QQuickWindow *mainWindow = nullptr;
     auto acceptRequest = [&](const QVariantMap &message) -> QVariantMap {
+        if (message.value("command") == "show") {
+            if (mainWindow) { mainWindow->show(); mainWindow->raise(); mainWindow->requestActivate(); }
+            return {{"ok", true}};
+        }
         auto add = [&](QVariantMap request) {
             if (!request.contains("directory") && !qEnvironmentVariableIsEmpty("IDM_NATIVE_DOWNLOAD_DIRECTORY"))
                 request.insert("directory",qEnvironmentVariable("IDM_NATIVE_DOWNLOAD_DIRECTORY"));
@@ -116,6 +141,8 @@ int main(int argc, char **argv) {
         return {{"ok",!ids.isEmpty()},{"ids",ids},{"errors",errors}};
     };
     BrowserBridge browserBridge(state,acceptRequest,manager.error().isEmpty());
+    if (!browserBridge.available()) return 1;
+    app.setQuitOnLastWindowClosed(false);
     QQuickStyle::setStyle("Basic");
     Translator translator;
     app.installTranslator(&translator);
@@ -129,8 +156,10 @@ int main(int argc, char **argv) {
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &manager);
+    engine.rootContext()->setContextProperty("startHidden", command == "background");
     engine.load(QUrl("qrc:/Main.qml"));
     if (engine.rootObjects().isEmpty()) return 1;
+    mainWindow = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     if (parser.isSet("smoke-test")) {
         QTimer::singleShot(1200, &app, [&] {
             auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
