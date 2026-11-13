@@ -28,7 +28,7 @@ def origin(url):
 
 def scope_headers(headers, target, source_origin, context):
     # Extractors may carry cookies between formats. Only the captured origin gets context.
-    blocked = {"cookie", "authorization", "proxy-authorization", "referer", "origin", *context}
+    blocked = {"cookie", "authorization", "proxy-authorization", "referer", "origin"} | {key.lower() for key in context}
     result = {str(k): str(v) for k, v in headers.items() if k.lower() not in blocked}
     if origin(target) == source_origin:
         result.update(context)

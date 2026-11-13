@@ -1,6 +1,7 @@
 """Verify both yt-dlp distribution forms with an isolated worker interpreter."""
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ import zipfile
 
 
 WORKER = Path(__file__).resolve().parents[1] / "src/mediaworker.py"
+WORKER_FUNCTIONS = runpy.run_path(str(WORKER))
 
 
 class MediaWorkerTests(unittest.TestCase):
@@ -40,6 +42,21 @@ class MediaWorkerTests(unittest.TestCase):
         result = self.load(module="MARKER = 'module'", executable="MARKER = 'standalone'")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "module")
+
+    def test_installed_python_module_loads_without_executable(self):
+        result = self.load(module="MARKER = 'module'")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "module")
+
+    def test_custom_context_headers_are_scoped_case_insensitively(self):
+        source = WORKER_FUNCTIONS["origin"]("https://example.com/watch")
+        context = {"X-Api-Key": "captured-secret"}
+        headers = {"x-api-key": "extractor-secret", "Accept": "video/*", "Cookie": "session=private"}
+        scope = WORKER_FUNCTIONS["scope_headers"]
+        self.assertEqual(scope(headers, "https://example.com:8443/video", source, context),
+                         {"Accept": "video/*"})
+        self.assertEqual(scope(headers, "https://example.com/video", source, context),
+                         {"Accept": "video/*", "X-Api-Key": "captured-secret"})
 
     def test_broken_module_dependency_is_not_hidden_by_fallback(self):
         result = self.load(module="import missing_dependency_for_idm_fixture", executable="MARKER = 'standalone'")

@@ -7,6 +7,8 @@
 #include <QJsonArray>
 #include <QProcess>
 #include <QPointer>
+#include <QScopeGuard>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -337,6 +339,24 @@ private slots:
     void mediaFailureNeverPublishes() {
         Server s;s.mode="error";QTemporaryDir dir;DownloadManager m(dir.path()+"/state");auto id=m.addRequest({{"url",s.url("bad.mp4")},{"directory",dir.path()+"/out"},{"media",true}});QVERIFY2(!id.isEmpty(),qPrintable(m.error()));
         QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("error"),30000);QVERIFY(!QFile::exists(row(m)["path"].toString()));
+    }
+    void mediaWorkerChecksYtdlpWithoutRequiringAnExecutable() {
+        QTemporaryDir tools,dir;
+        for(const auto &name:QStringList{"ffmpeg","ffprobe"}) {
+            const auto executable=QStandardPaths::findExecutable(name);
+            QVERIFY(!executable.isEmpty());QVERIFY(QFile::link(executable,tools.filePath(name)));
+        }
+        const auto oldPath=qgetenv("PATH");
+        const auto restorePath=qScopeGuard([&]{qputenv("PATH",oldPath);});
+        qputenv("PATH",tools.path().toUtf8());
+        QVERIFY(QStandardPaths::findExecutable("yt-dlp").isEmpty());
+        Server s;s.mode="error";DownloadManager m(dir.path()+"/state");
+        const auto id=m.addRequest({{"url",s.url("video.mp4")},{"directory",dir.path()+"/out"},{"media",true},{"start",false}});
+        QVERIFY2(!id.isEmpty(),qPrintable(m.error()));QCOMPARE(row(m)["status"].toString(),QString("paused"));
+        m.resume(id);QCOMPARE(row(m)["status"].toString(),QString("downloading"));
+        QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("error"),30000);
+        QVERIFY2(row(m)["error"].toString().startsWith("Cannot load yt-dlp") || row(m)["error"].toString().startsWith("Media capture failed"),qPrintable(row(m)["error"].toString()));
+        QVERIFY(!QFile::exists(row(m)["path"].toString()));
     }
     void rateLimitsDrainRangeAndSerialWithoutTruncation_data() {QTest::addColumn<QString>("mode");QTest::newRow("range")<<QString("range");QTest::newRow("serial")<<QString("serial");}
     void rateLimitsDrainRangeAndSerialWithoutTruncation() {

@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
         return path.isEmpty() ? 1 : 0;
     }
     DownloadManager manager(state);
-    if (command == "download" && !manager.error().isEmpty()) { printJson({{"error", manager.error()}}, true); return 1; }
+    if (!manager.error().isEmpty()) { printJson({{"error", manager.error()}}, true); return 1; }
     if (command == "download") {
         bool valid;
         const int connections = parser.value("connections").toInt(&valid);

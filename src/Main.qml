@@ -175,12 +175,10 @@ ApplicationWindow {
         return value
     }
     function siteForUrl(url) {
-        let match = url.match(/^[a-z]+:\/\/(\[[^\]]+\]|[^/:?#]+)/i)
-        let host = match ? match[1].replace(/^\[|\]$/g,"").toLowerCase() : ""
-        return (preferences.siteSettings || {})[host] || {}
+        return (preferences.siteSettings || {})[automationAvailable ? automation.siteOrigin(url) : ""] || {}
     }
     function loadSiteSettings() {
-        let site=(preferences.siteSettings || {})[siteHost.text.trim().toLowerCase()] || {}, custom={}
+        let site=automation.siteSettingsForEditing(siteHost.text), custom={}
         siteLogin.text=site.username || ""; sitePassword.text=site.password || ""
         siteDirectory.text=site.directory || ""; siteConnections.value=site.connections || 4; siteProxy.text=site.proxy || ""
         siteAgent.text=""; siteReferer.text=""
@@ -204,8 +202,10 @@ ApplicationWindow {
         if (siteProxy.text) site.proxy=siteProxy.text
         if (siteLogin.text) { site.username=siteLogin.text; site.password=sitePassword.text }
         let sites=Object.assign({},preferences.siteSettings || {})
-        sites[siteHost.text.trim().toLowerCase()]=site
+        delete sites[automation.siteOrigin(siteHost.text)]
+        sites[siteHost.text.trim()]=site
         if (!automation.configure({siteSettings:sites})) { lastError=automation.error; return }
+        siteHost.text=automation.siteOrigin(siteHost.text)
         lastError=""; siteStatus.text=qsTr("Site settings saved.")
     }
     function saveOptions() {
@@ -1071,9 +1071,10 @@ ApplicationWindow {
                     spacing: 8; Layout.minimumHeight: 0
                     RowLayout {
                         Layout.fillWidth: true
-                        Label { text: qsTr("Site hostname") }
-                        AppField { id: siteHost; objectName: "siteHost"; Layout.fillWidth: true; placeholderText: "example.com" }
+                        Label { text: qsTr("Site origin") }
+                        AppField { id: siteHost; objectName: "siteHost"; Layout.fillWidth: true; placeholderText: "https://example.com" }
                     }
+                    Label { visible: win.automationAvailable && automation.hasLegacySiteSettings; text: qsTr("Old site profiles are inactive. Enter the full origin, then Load and Save to use one."); color: win.muted; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     ScrollView {
                     id: siteScroll; objectName: "siteScroll"; clip: true; contentWidth: availableWidth
                     implicitHeight: 275; Layout.minimumHeight: 0; Layout.fillWidth: true; Layout.fillHeight: true

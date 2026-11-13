@@ -1,6 +1,6 @@
 # Independent automation and bridge checks
 
-`bin/test-automation-adversarial` runs 20 behavior cases against the real Automation/DownloadManager classes, isolated local HTTP servers, temporary state/output directories, actual native-host installer subprocesses, and a private Unix socket. The final run reported **22 passes, zero failures and zero skips**, including Qt's setup/cleanup cases. No user clipboard, normal browser profile, system trust store, shutdown command or network-disconnect command was used.
+`bin/test-automation-adversarial` runs behavior cases against the real Automation/DownloadManager classes, isolated local HTTP servers, temporary state/output directories, actual native-host installer subprocesses, and a private Unix socket. No user clipboard, normal browser profile, system trust store, shutdown command or network-disconnect command is used.
 
 Power, network and scanner actions use an injected executor that records arguments and returns controlled results. This verifies the controller's dispatch and safety decisions, not a physical shutdown/disconnection or the quality of an antivirus engine. The generated native launcher is actually executed against a harmless temporary fixture binary to verify shell quoting and argument forwarding.
 
@@ -18,7 +18,7 @@ The suite reproduced these failures before their fixes and now verifies the resu
 | A website grab starts during a pending completion countdown | The old action cannot fire while new work is running. |
 | Native-host launcher already contains unrelated user data | Installation refuses to replace it. |
 
-Additional cases verify mixed antivirus outcomes block completion actions, broken settings remain unmodified, zero retry budget makes no retry loop, existing/symlinked export targets are preserved, import remains paused and cannot smuggle private headers, site credentials do not leak to another hostname, and the scheduled limiter affects actual transfer progress.
+Additional cases verify mixed antivirus outcomes block completion actions, broken settings remain unmodified, zero retry budget makes no retry loop, existing/symlinked export targets are preserved, import remains paused and cannot smuggle private headers, site credentials do not leak to another origin, and the scheduled limiter affects actual transfer progress. Site tests cover another hostname, another port on the same host, and another scheme on the same host and port. Old hostname-only profiles stay inactive and retain their private data until the user explicitly loads and saves a profile for a full origin.
 
 The periodic website test goes through the real controller schedule, embedded Python worker and local HTTP server, then reads the resulting offline HTML. It checks that the next run moves into the future and an immediate schedule check makes no second request. This establishes execution beyond merely saving a synchronization preference.
 

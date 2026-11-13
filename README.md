@@ -26,6 +26,8 @@ The implementation uses Qt/C++ conventions for Omarchy. The [investigation](docs
 
 **Options** configures destination, connections, simultaneous jobs, retry policy, speed limits and schedules, HTTP/SOCKS proxies, clipboard monitoring, file-type filtering, site-specific headers/authentication, antivirus, notifications, sound and completion actions. Custom headers accept a JSON object of string values. Managed and hop-by-hop headers are filtered; invalid controls and oversized values are rejected.
 
+Site profiles match the full scheme, hostname and effective port. Enter an origin such as `https://example.com` or `https://example.com:8443`, without a path or login. Existing hostname-only profiles become inactive because their original scheme and port are unknown. To recover one, enter its intended origin in **Options > Sites**, click **Load site settings**, check its values, then click **Save site settings**. The original profile remains as a private backup under `legacySiteSettings` in the state directory's `automation.json`; it never applies automatically to downloads.
+
 **Scheduler** manages named queues and start/stop/repeat times. Jobs have priorities; queues have concurrency limits. Import/export supports a private JSON list or plain URL lines. **Website Grabber** performs a bounded, same-origin static crawl, rewrites links for offline use, and supports conditional periodic synchronization.
 
 Schedules execute while the app is running. Closing its window keeps transfers running in the background. Use Tasks > Exit or Ctrl+Q to pause transfers, save state and quit. Shutdown and network disconnect are opt-in, have a cancelable countdown, and are blocked if scanning fails or other work begins.

@@ -301,7 +301,7 @@ private slots:
         {{"clipboardMonitor", true},
          {"siteSettings",
           QVariantMap{
-              {"127.0.0.1",
+              {automation.siteOrigin(server.url()),
                QVariantMap{{"directory", dir.path() + "/site"},
                            {"headers",
                             QVariantMap{{"User-Agent", "IDM-Site-Test"},
@@ -315,6 +315,30 @@ private slots:
     QVERIFY(server.lastRequest.contains("User-Agent: IDM-Site-Test"));
     QVERIFY(
         first(manager)["path"].toString().startsWith(dir.path() + "/site/"));
+  }
+  void siteOriginsNormalizeAndRequireAnExplicitScope() {
+    QTemporaryDir dir;
+    DownloadManager manager(dir.path() + "/state");
+    Automation automation(&manager, dir.path() + "/state", nullptr, quiet());
+    const QList<QPair<QString, QString>> origins{
+        {"HTTPS://ExAmPlE.com/", "https://example.com:443"},
+        {"https://example.com:443/file?x=1", "https://example.com:443"},
+        {"http://example.com", "http://example.com:80"},
+        {"https://example.com:8443", "https://example.com:8443"},
+        {"http://[::1]", "http://[::1]:80"},
+        {"ftp://example.com", "ftp://example.com:21"},
+        {"ftps://example.com", "ftps://example.com:990"}};
+    for (const auto &[url, origin] : origins)
+      QCOMPARE(automation.siteOrigin(url), origin);
+    const QVariantMap profile{{"headers", QVariantMap{{"X-Key", "private"}}}};
+    QVERIFY(automation.configure({{"siteSettings", QVariantMap{{"HTTPS://ExAmPlE.com/", profile}}}}));
+    QCOMPARE(automation.preferences().value("siteSettings").toMap().keys(),
+             QStringList{"https://example.com:443"});
+    QCOMPARE(automation.siteSettingsForEditing("https://EXAMPLE.com:443"), profile);
+    for (const auto &invalid : QStringList{"example.com", "https://user:secret@example.com", "https://example.com/path", "https://example.com?x=1", "https://example.com#part", "https://example.com:99999"})
+      QVERIFY2(!automation.configure({{"siteSettings", QVariantMap{{invalid, profile}}}}), qPrintable(invalid));
+    QCOMPARE(automation.preferences().value("siteSettings").toMap().keys(),
+             QStringList{"https://example.com:443"});
   }
   void scannerNotificationsSoundAndCancelableCompletion() {
     Fixture server;

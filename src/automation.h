@@ -16,6 +16,7 @@ class Automation : public QObject {
   Q_PROPERTY(QVariantMap grabber READ grabber NOTIFY changed)
   Q_PROPERTY(QString error READ error NOTIFY changed)
   Q_PROPERTY(QString completionNotice READ completionNotice NOTIFY changed)
+  Q_PROPERTY(bool hasLegacySiteSettings READ hasLegacySiteSettings NOTIFY changed)
 public:
   using Executor = std::function<void(
       const QStringList &, std::function<void(int, const QString &)>)>;
@@ -28,6 +29,9 @@ public:
   QVariantMap grabber() const { return mirrorState; }
   QString error() const { return failure; }
   QString completionNotice() const { return notice; }
+  bool hasLegacySiteSettings() const { return !legacySiteSettings.isEmpty(); }
+  Q_INVOKABLE QString siteOrigin(const QString &url) const;
+  Q_INVOKABLE QVariantMap siteSettingsForEditing(const QString &url) const;
   Q_INVOKABLE bool configure(const QVariantMap &options);
   Q_INVOKABLE QString enqueue(QVariantMap request);
   Q_INVOKABLE QVariantMap batch(const QVariantList &requests);
@@ -57,7 +61,7 @@ signals:
 private:
   DownloadManager *manager;
   QString state, failure, notice;
-  QVariantMap settings, queueSettings, policies, mirrorState;
+  QVariantMap settings, queueSettings, policies, mirrorState, legacySiteSettings;
   QSet<QString> processed, scanning, unsafe;
   QTimer tick, completionTimer;
   QProcess *mirrorProcess = nullptr;

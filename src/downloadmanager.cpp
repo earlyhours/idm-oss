@@ -428,7 +428,7 @@ struct DownloadManager::Impl {
     }
     void startWorker(const std::shared_ptr<Job> &j) {
         const bool ftp=!j->media;
-        if (!QFileInfo::exists("/usr/bin/python3") || QStandardPaths::findExecutable(ftp?"curl":"yt-dlp").isEmpty() || (!ftp && (QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty()))) { fail(j,q->tr("A required free transfer tool is missing. Install Python, curl, yt-dlp and FFmpeg."));return; }
+        if (!QFileInfo::exists("/usr/bin/python3") || (ftp && QStandardPaths::findExecutable("curl").isEmpty()) || (!ftp && (QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty()))) { fail(j,q->tr("A required free transfer tool is missing. Install Python, curl, yt-dlp and FFmpeg."));return; }
         const QString directory = root + "/" + j->id, work = directory + (ftp?"/transfer":"/media");
         if (QFileInfo(directory).isSymLink() || QFileInfo(work).isSymLink()) { fail(j,q->tr("Unsafe media working directory.")); return; }
         // Fragment files lack a common strong validator, so a paused capture restarts safely.
@@ -623,7 +623,7 @@ QString DownloadManager::addRequest(const QVariantMap &request) {
     if(media && request.value("proxy").toMap().value("type").toString()=="socks5")return reject(tr("Media capture currently supports HTTP proxies; choose an HTTP proxy or a direct connection."));
     const auto format = request.value("format","best").toString();
     if (media && !QStringList{"best","1080p","720p","audio"}.contains(format)) return reject(tr("Choose Best, 1080p, 720p, or Audio quality."));
-    if (media && (!QFileInfo::exists("/usr/bin/python3") || QStandardPaths::findExecutable("yt-dlp").isEmpty() || QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty())) return reject(tr("Media capture needs the free Python, yt-dlp and FFmpeg packages."));
+    if (media && (!QFileInfo::exists("/usr/bin/python3") || QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty())) return reject(tr("Media capture needs the free Python, yt-dlp and FFmpeg packages."));
     if (!httpUrl(url) && QStandardPaths::findExecutable("curl").isEmpty())return reject(tr("FTP transfers need the free curl package."));
     if ((media || !httpUrl(url)) && !QFile::exists(":/mediaworker.py")) return reject(tr("This build is missing its media worker resource."));
     QString name = request.value("filename").toString();

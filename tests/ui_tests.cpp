@@ -94,6 +94,9 @@ private slots:
         Translator translator(languagePath);
         qApp->installTranslator(&translator);
         DownloadManager manager(temporary.path() + "/state");
+        QVERIFY(writeFile(temporary.path() + "/state/automation.json", QJsonDocument(QJsonObject{
+            {"preferences", QJsonObject{{"siteSettings", QJsonObject{{"127.0.0.1", QJsonObject{
+                {"headers", QJsonObject{{"X-Legacy-Key", "legacy-profile"}}}}}}}}}}).toJson()));
         QList<QStringList> commands;
         Automation automation(&manager, temporary.path() + "/state", nullptr,
                               [&](const QStringList &command, std::function<void(int,const QString &)> done) {
@@ -116,6 +119,10 @@ private slots:
         QVERIFY2(!engine.rootObjects().isEmpty(), qPrintable(warnings.join('\n')));
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);
+        QVariant legacyPrefill;
+        QVERIFY(QMetaObject::invokeMethod(window, "siteForUrl", Q_RETURN_ARG(QVariant, legacyPrefill),
+                                         Q_ARG(QVariant, QVariant("http://127.0.0.1:8080/file.bin"))));
+        QVERIFY(legacyPrefill.toMap().isEmpty());
         const QList<QPair<QString, QString>> sourceHosts{
             {"https://user:secret@downloads.example:8443/private/file.zip?token=hidden#fragment", "downloads.example"},
             {"http://127.0.0.1:8080/file", "127.0.0.1"},
@@ -573,12 +580,23 @@ private slots:
         auto *saveSite=window->findChild<QObject *>("saveSiteButton");
         auto *loadSite=window->findChild<QObject *>("loadSiteButton");
         QVERIFY(siteHost && siteHeaders && siteAgent && siteReferer && saveSite && loadSite);
-        siteHost->setProperty("text","127.0.0.1");
+        siteHeaders->setProperty("text","{}");
+        for (const auto &invalid : QStringList{"127.0.0.1", "http://user:secret@127.0.0.1", "http://127.0.0.1/path"}) {
+            siteHost->setProperty("text",invalid);
+            QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
+            QVERIFY(!window->property("lastError").toString().isEmpty());
+            QVERIFY(automation.preferences().value("siteSettings").toMap().isEmpty());
+        }
+        const auto siteOrigin=QString("http://127.0.0.1:%1").arg(server.serverPort());
+        siteHost->setProperty("text",siteOrigin+"/");
+        QVERIFY(QMetaObject::invokeMethod(loadSite,"clicked"));
+        QCOMPARE(QJsonDocument::fromJson(siteHeaders->property("text").toByteArray()).object().value("X-Legacy-Key").toString(),"legacy-profile");
+        QVERIFY(automation.preferences().value("siteSettings").toMap().isEmpty());
         for (const auto &invalid : QStringList{"not JSON", "[]", "null", "{\"X-Key\": 7}", "{\"X-Key\": \"unsafe\\r\\nvalue\"}"}) {
             siteHeaders->setProperty("text",invalid);
             QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
             QVERIFY(!window->property("lastError").toString().isEmpty());
-            QVERIFY(!automation.preferences().value("siteSettings").toMap().contains("127.0.0.1"));
+            QVERIFY(automation.preferences().value("siteSettings").toMap().isEmpty());
         }
         siteHeaders->setProperty("text","{\"X-Api-Key\":\"fixture-site-key\",\"X-Trace\":\"preserved\",\"uSeR-aGeNt\":\"overridden\"}");
         siteAgent->setProperty("text","CustomHeadersFixture/1.0");
@@ -586,6 +604,9 @@ private slots:
         siteReferer->setProperty("text",referrer);
         QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
         QVERIFY2(window->property("lastError").toString().isEmpty(),qPrintable(window->property("lastError").toString()));
+        QCOMPARE(siteHost->property("text").toString(),siteOrigin);
+        QCOMPARE(automation.preferences().value("siteSettings").toMap().keys(),QStringList{siteOrigin});
+        siteHost->setProperty("text",QString("HTTP://127.0.0.1:%1/").arg(server.serverPort()));
         QVERIFY(QMetaObject::invokeMethod(loadSite,"clicked"));
         const auto custom=QJsonDocument::fromJson(siteHeaders->property("text").toByteArray()).object();
         QCOMPARE(custom.value("X-Api-Key").toString(),"fixture-site-key");
@@ -594,7 +615,7 @@ private slots:
         QCOMPARE(siteReferer->property("text").toString(),referrer);
         siteAgent->setProperty("text","");siteReferer->setProperty("text","");
         QVERIFY(QMetaObject::invokeMethod(saveSite,"clicked"));
-        const auto cleared=automation.preferences().value("siteSettings").toMap().value("127.0.0.1").toMap().value("headers").toMap();
+        const auto cleared=automation.preferences().value("siteSettings").toMap().value(siteOrigin).toMap().value("headers").toMap();
         QVERIFY(!cleared.contains("User-Agent"));QVERIFY(!cleared.contains("Referer"));
         QCOMPARE(cleared.value("X-Trace").toString(),"preserved");
         siteAgent->setProperty("text","CustomHeadersFixture/1.0");siteReferer->setProperty("text",referrer);
@@ -614,7 +635,7 @@ private slots:
         const auto scrollPosition=siteContent->mapToScene(QPointF());
         QVERIFY(hostPosition.y()>=options->property("y").toReal());
         QVERIFY2(hostPosition.y()+hostItem->height() <= scrollPosition.y(),
-                 "The site hostname must stay above the scrolling request settings.");
+                 "The site origin must stay above the scrolling request settings.");
         QVERIFY(QMetaObject::invokeMethod(options,"close"));
         QVERIFY(siteHeaders->property("text").toString().isEmpty());
 
@@ -899,7 +920,7 @@ private slots:
         QVERIFY(options);
         QVERIFY(QMetaObject::invokeMethod(options,"open"));
         window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex",4);
-        window->findChild<QObject *>("siteHost")->setProperty("text","downloads.example");
+        window->findChild<QObject *>("siteHost")->setProperty("text","https://downloads.example");
         for (const auto *name : {"siteAuthenticationDisclosure", "siteHeadersDisclosure"}) {
             auto *disclosure = window->findChild<QQuickItem *>(name);
             QVERIFY(disclosure);

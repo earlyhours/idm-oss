@@ -539,26 +539,83 @@ private slots:
     QCOMPARE(automation.grabber()["status"].toString(), QString("downloading"));
     automation.cancelMirror();
   }
-  void sitePoliciesDoNotLeakCredentialsToAnotherHostname() {
-    AdversarialServer server;
+  void sitePoliciesDoNotLeakCredentialsToAnotherOrigin() {
+    AdversarialServer server, otherPort;
     QTemporaryDir temp;
     DownloadManager manager(temp.path() + "/state");
     Automation automation(&manager, temp.path() + "/state", nullptr, quiet());
     QVariantMap policy{
-        {"127.0.0.1",
+        {automation.siteOrigin(server.url()),
          QVariantMap{
              {"directory", temp.path() + "/private-site"},
-             {"headers", QVariantMap{{"Cookie", "private-site=only"}}}}}};
+             {"username", "private-user"}, {"password", "private-password"},
+             {"headers", QVariantMap{{"Cookie", "private-site=only"},
+                                     {"Authorization", "Bearer private-token"},
+                                     {"X-Api-Key", "private-api-key"}}}}}};
     QVERIFY(automation.configure({{"directory", temp.path() + "/global"},
                                   {"notifications", false},
                                   {"siteSettings", policy}}));
-    auto url = server.url();
-    url.replace("127.0.0.1", "localhost");
-    QVERIFY(!automation.enqueue({{"url", url}}).isEmpty());
+    auto otherHost = server.url("other-host.bin");
+    otherHost.replace("127.0.0.1", "localhost");
+    QVERIFY(!automation.enqueue({{"url", otherHost}}).isEmpty());
     QTRY_VERIFY_WITH_TIMEOUT(finished(manager), 5000);
-    QVERIFY(!server.lastRequest.contains("private-site=only"));
-    QVERIFY(manager.downloads().first().toMap()["path"].toString().startsWith(
-        temp.path() + "/global/"));
+    QVERIFY(!server.lastRequest.contains("private-"));
+    QVERIFY(!automation.enqueue({{"url", otherPort.url("other-port.bin")}}).isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(finished(manager), 5000);
+    QVERIFY(!otherPort.lastRequest.contains("private-"));
+    auto otherScheme = server.url("other-scheme.bin");
+    otherScheme.replace("http:", "https:");
+    QVERIFY(!automation.enqueue({{"url", otherScheme}, {"start", false}}).isEmpty());
+    QVERIFY(!automation.enqueue({{"url", server.url("same-origin.bin")}, {"start", false}}).isEmpty());
+    QFile saved(temp.path() + "/state/queue.json");
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    const auto jobs = QJsonDocument::fromJson(saved.readAll()).object().value("downloads").toArray();
+    QCOMPARE(jobs.size(), 4);
+    for (int i = 0; i < 3; ++i) {
+      const auto job = jobs[i].toObject();
+      QVERIFY(job.value("username").toString().isEmpty());
+      QVERIFY(job.value("password").toString().isEmpty());
+      QVERIFY(job.value("headers").toObject().isEmpty());
+      QVERIFY(job.value("path").toString().startsWith(temp.path() + "/global/"));
+    }
+    QCOMPARE(jobs[3].toObject().value("username").toString(), "private-user");
+    QCOMPARE(jobs[3].toObject().value("password").toString(), "private-password");
+    QCOMPARE(jobs[3].toObject().value("headers").toObject().value("x-api-key").toString(), "private-api-key");
+  }
+  void legacyHostnamePoliciesStayInertAndRecoverOnlyByExplicitEditing() {
+    AdversarialServer server;
+    QTemporaryDir temp;
+    const auto state = temp.path() + "/state";
+    QVERIFY(QDir().mkpath(state));
+    const QJsonObject profile{{"username", "legacy-user"}, {"password", "legacy-password"},
+                             {"headers", QJsonObject{{"Cookie", "legacy-secret"}}}};
+    write(state + "/automation.json", QJsonDocument(QJsonObject{
+        {"version", 1}, {"preferences", QJsonObject{
+            {"directory", temp.path() + "/out"}, {"notifications", false},
+            {"siteSettings", QJsonObject{{"127.0.0.1", profile}}}}}}).toJson());
+    {
+      DownloadManager manager(state);
+      Automation automation(&manager, state, nullptr, quiet());
+      QVERIFY(automation.error().isEmpty());
+      QVERIFY(automation.hasLegacySiteSettings());
+      QVERIFY(automation.preferences().value("siteSettings").toMap().isEmpty());
+      QVERIFY(!automation.enqueue({{"url", server.url()}}).isEmpty());
+      QTRY_VERIFY_WITH_TIMEOUT(finished(manager), 5000);
+      QVERIFY(!server.lastRequest.contains("legacy-"));
+      const auto recovered = automation.siteSettingsForEditing(automation.siteOrigin(server.url()));
+      QCOMPARE(QJsonObject::fromVariantMap(recovered), profile);
+      QVERIFY(automation.preferences().value("siteSettings").toMap().isEmpty());
+      QVERIFY(automation.configure({{"siteSettings", QVariantMap{{automation.siteOrigin(server.url()), recovered}}}}));
+      QVERIFY(!automation.enqueue({{"url", server.url("recovered.bin")}}).isEmpty());
+      QTRY_VERIFY_WITH_TIMEOUT(finished(manager), 5000);
+      QVERIFY(server.lastRequest.contains("legacy-secret"));
+    }
+    QFile saved(state + "/automation.json");
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    const auto object = QJsonDocument::fromJson(saved.readAll()).object();
+    QCOMPARE(object.value("legacySiteSettings").toObject().value("127.0.0.1").toObject(), profile);
+    QCOMPARE(object.value("preferences").toObject().value("siteSettings").toObject().keys(),
+             QStringList{QString("http://127.0.0.1:%1").arg(server.serverPort())});
   }
   void installedNativeLauncherQuotesBinaryPathsAndForwardsArguments() {
     QTemporaryDir temp;

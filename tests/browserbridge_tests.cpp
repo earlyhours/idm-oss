@@ -1,10 +1,15 @@
 #include "browserbridge.h"
+#include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QtEndian>
 #include <QtTest>
+#include <csignal>
+#include <sys/stat.h>
 
 class BridgeTests : public QObject {
   Q_OBJECT
@@ -86,6 +91,79 @@ private slots:
     QVERIFY(!QFileInfo::exists(BrowserBridge::socketPath(temporary.path())));
     host.closeWriteChannel();
     QVERIFY(host.waitForFinished());
+  }
+  void queueOwnerSurvivesSecondStartupAndCrashRecovery() {
+    QTemporaryDir temporary;
+    QFile settings(temporary.filePath("automation.json"));
+    const QByteArray savedSettings="{\"preferences\":{\"notifications\":false}}";
+    const auto socket = BrowserBridge::socketPath(temporary.path());
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("QT_QPA_PLATFORM", "offscreen");
+    environment.insert("QT_QUICK_BACKEND", "software");
+    QProcess owner;
+    owner.setProcessEnvironment(environment);
+    owner.start(binary(), {"background", "--state-directory", temporary.path()});
+    QVERIFY(owner.waitForStarted());
+    QTRY_VERIFY(QFileInfo::exists(socket));
+    struct stat original;
+    QCOMPARE(::stat(qPrintable(socket), &original), 0);
+
+    // A stalled owner cannot answer handoffs, but it still owns queue.lock.
+    QCOMPARE(::kill(pid_t(owner.processId()), SIGSTOP), 0);
+    QVERIFY(settings.open(QIODevice::WriteOnly));
+    QCOMPARE(settings.write(savedSettings), savedSettings.size());
+    settings.close();
+    QProcess second;
+    second.setProcessEnvironment(environment);
+    second.start(binary(), {"background", "--state-directory", temporary.path()});
+    QVERIFY(second.waitForStarted());
+    QVERIFY(second.waitForFinished(5000));
+    QCOMPARE(second.exitCode(), 1);
+    struct stat remaining;
+    QCOMPARE(::stat(qPrintable(socket), &remaining), 0);
+    QCOMPARE(remaining.st_ino, original.st_ino);
+    QCOMPARE(remaining.st_dev, original.st_dev);
+    QVERIFY(settings.open(QIODevice::ReadOnly));
+    QCOMPARE(settings.readAll(), savedSettings);
+    settings.close();
+    QCOMPARE(::kill(pid_t(owner.processId()), SIGCONT), 0);
+
+    QProcess host;
+    host.start(binary(), {"browser-host", "--state-directory", temporary.path()});
+    QVERIFY(host.waitForStarted());
+    host.write(frame("{\"command\":\"download\",\"request\":{\"url\":\"https://example.com/saved.bin\",\"start\":false}}"));
+    const auto accepted = response(host);
+    QVERIFY(accepted.value("ok").toBool());
+    QVERIFY(!accepted.value("id").toString().isEmpty());
+    host.closeWriteChannel();
+    QVERIFY(host.waitForFinished());
+    owner.kill();
+    QVERIFY(owner.waitForFinished());
+    QVERIFY(QFileInfo::exists(socket));
+
+    QProcess recovered;
+    recovered.setProcessEnvironment(environment);
+    recovered.start(binary(), {"background", "--state-directory", temporary.path()});
+    QVERIFY(recovered.waitForStarted());
+    QProcess probe;
+    probe.start(binary(), {"browser-host", "--state-directory", temporary.path()});
+    QVERIFY(probe.waitForStarted());
+    QVariantMap result;
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+      probe.write(frame("{\"command\":\"ping\"}"));
+      result = response(probe);
+      return result.value("running").toBool();
+    })(), 5000);
+    QVERIFY(result.value("ok").toBool());
+    QFile queue(temporary.filePath("queue.json"));
+    QVERIFY(queue.open(QIODevice::ReadOnly));
+    const auto records = QJsonDocument::fromJson(queue.readAll()).object().value("downloads").toArray();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().toObject().value("id").toString(), accepted.value("id").toString());
+    probe.closeWriteChannel();
+    QVERIFY(probe.waitForFinished());
+    recovered.terminate();
+    QVERIFY(recovered.waitForFinished());
   }
   void malformedAndOversizeFramesFail() {
     QTemporaryDir temporary;

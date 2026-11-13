@@ -33,7 +33,25 @@ QString normalizedUrl(const QString &input) {
   url.setFragment({});
   return url.toString(QUrl::FullyEncoded);
 }
-QString validatePreferences(const QVariantMap &values) {
+QString urlOrigin(const QString &input) {
+  const QUrl url(input.trimmed());
+  const auto scheme = url.scheme().toLower();
+  if (!url.isValid() || url.host().isEmpty() || !url.userInfo().isEmpty() ||
+      !QStringList{"http", "https", "ftp", "ftps"}.contains(scheme))
+    return {};
+  QUrl origin;
+  origin.setScheme(scheme);
+  origin.setHost(url.host().toLower());
+  origin.setPort(url.port(scheme == "https" ? 443 : scheme == "ftps" ? 990 : scheme == "ftp" ? 21 : 80));
+  return origin.toString(QUrl::FullyEncoded);
+}
+bool isSiteOrigin(const QString &input) {
+  const QUrl url(input.trimmed());
+  return !urlOrigin(input).isEmpty() &&
+         (url.path().isEmpty() || url.path() == "/") &&
+         !url.hasQuery() && !url.hasFragment();
+}
+QString validatePreferences(QVariantMap &values) {
   struct Bound {
     const char *name;
     qint64 minimum;
@@ -57,6 +75,18 @@ QString validatePreferences(const QVariantMap &values) {
   if (!QStringList{"none", "shutdown", "disconnect"}.contains(
           values.value("completionAction").toString()))
     return QObject::tr("Unsupported completion action.");
+  if (values.value("siteSettings").metaType().id() != QMetaType::QVariantMap)
+    return QObject::tr("Site settings must be a map of full origins.");
+  QVariantMap sites;
+  const auto savedSites = values.value("siteSettings").toMap();
+  for (auto i = savedSites.begin(); i != savedSites.end(); ++i) {
+    const auto origin = urlOrigin(i.key());
+    if (!isSiteOrigin(i.key()) || sites.contains(origin) ||
+        i.value().metaType().id() != QMetaType::QVariantMap)
+      return QObject::tr("Use a full site origin such as https://example.com:443, without a path or login.");
+    sites[origin] = i.value();
+  }
+  values["siteSettings"] = sites;
   for (const auto &value : values.value("speedSchedule").toList()) {
     auto entry = value.toMap();
     bool ok = false;
@@ -128,6 +158,17 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
         if (!savedQueues.isEmpty())
           queueSettings = savedQueues;
         policies = object.value("policies").toObject().toVariantMap();
+        legacySiteSettings = object.value("legacySiteSettings").toObject().toVariantMap();
+        auto sites = settings.value("siteSettings").toMap();
+        for (auto i = sites.begin(); i != sites.end();) {
+          if (!isSiteOrigin(i.key())) {
+            legacySiteSettings[i.key()] = i.value();
+            i = sites.erase(i);
+          } else {
+            ++i;
+          }
+        }
+        settings["siteSettings"] = sites;
         for (auto i = queueSettings.begin(); i != queueSettings.end(); ++i) {
           auto q = i.value().toMap();
           q["active"] = false;
@@ -204,7 +245,8 @@ bool Automation::save() {
           QJsonObject{{"version", 1},
                       {"preferences", QJsonObject::fromVariantMap(settings)},
                       {"queues", QJsonObject::fromVariantMap(queueSettings)},
-                      {"policies", QJsonObject::fromVariantMap(policies)}})
+                      {"policies", QJsonObject::fromVariantMap(policies)},
+                      {"legacySiteSettings", QJsonObject::fromVariantMap(legacySiteSettings)}})
           .toJson();
   if (!file.open(QIODevice::WriteOnly) ||
       !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) ||
@@ -248,12 +290,27 @@ bool Automation::configure(const QVariantMap &options) {
   reconcile();
   return true;
 }
+QString Automation::siteOrigin(const QString &url) const {
+  return urlOrigin(url);
+}
+QVariantMap Automation::siteSettingsForEditing(const QString &url) const {
+  if (!isSiteOrigin(url))
+    return {};
+  const auto sites = settings.value("siteSettings").toMap();
+  const auto origin = urlOrigin(url);
+  if (sites.contains(origin))
+    return sites.value(origin).toMap();
+  const auto host = QUrl(url.trimmed()).host();
+  for (auto i = legacySiteSettings.begin(); i != legacySiteSettings.end(); ++i)
+    if (i.key().compare(host, Qt::CaseInsensitive) == 0)
+      return i.value().toMap();
+  return {};
+}
 QString Automation::enqueue(QVariantMap request) {
   if (!settingsWritable)
     return {};
   const auto url = normalizedUrl(request.value("url").toString());
-  const QString host = QUrl(url).host().toLower();
-  const auto site = settings.value("siteSettings").toMap().value(host).toMap();
+  const auto site = settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
   for (const auto &key :
        QStringList{"directory", "connections", "proxy", "username", "password"})
     if (!request.contains(key) && site.contains(key))
