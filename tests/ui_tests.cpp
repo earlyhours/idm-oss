@@ -42,6 +42,15 @@ static bool writeFile(const QString &path, const QByteArray &data) {
     return file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(data) == data.size();
 }
 
+static bool capture(QQuickWindow *window, const QString &path) {
+    const auto image = window->grabWindow();
+    const auto directory = qEnvironmentVariable("IDM_UI_SCREENSHOT_DIR");
+    if (directory.isEmpty()) return image.save(path);
+    QString name = QFileInfo(path).fileName();
+    name.replace("idm-native-", "desktop-").replace("idm-classic-", "desktop-").replace("idm-custom-", "desktop-custom-");
+    return QDir().mkpath(directory) && image.save(QDir(directory).filePath(name));
+}
+
 static double contrast(const QColor &foreground, const QColor &background) {
     auto luminance = [](const QColor &color) {
         auto channel = [](double value) { return value <= .04045 ? value / 12.92 : std::pow((value + .055) / 1.055, 2.4); };
@@ -60,6 +69,13 @@ static QObject *withProperty(QObject *root, const char *property, const QVariant
             if (child->parent() != root)
                 if (auto *found = withProperty(child, property, value)) return found;
     return nullptr;
+}
+
+static QStringList columnKeys(QObject *window) {
+    QStringList keys;
+    const auto columns = window->property("columns").value<QJSValue>().toVariant().toList();
+    for (const auto &column : columns) keys << column.toMap().value("key").toString();
+    return keys;
 }
 
 class UiTests : public QObject {
@@ -100,17 +116,74 @@ private slots:
         QVERIFY2(!engine.rootObjects().isEmpty(), qPrintable(warnings.join('\n')));
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);
+        const QList<QPair<QString, QString>> sourceHosts{
+            {"https://user:secret@downloads.example:8443/private/file.zip?token=hidden#fragment", "downloads.example"},
+            {"http://127.0.0.1:8080/file", "127.0.0.1"},
+            {"https://user:secret@[2001:db8::1]:8443/private?token=hidden", "[2001:db8::1]"},
+            {"invalid URL", "Other"}
+        };
+        for (const auto &[url, host] : sourceHosts) {
+            QVariant result;
+            const QVariant input = QVariantMap{{"url", url}, {"category", "Other"}};
+            QVERIFY(QMetaObject::invokeMethod(window, "sourceHost", Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, input)));
+            QCOMPARE(result.toString(), host);
+        }
         window->requestActivate();
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QTRY_VERIFY(window->isActive());
         QVERIFY(window->findChild<QObject *>("downloadTable"));
-        QCOMPARE(window->title(), QString("Internet Download Manager"));
-        QVERIFY(withProperty(window, "text", "File Name"));
+        auto *fileTypesGroup = qobject_cast<QQuickItem *>(withProperty(window, "objectName", "navigation-types"));
+        auto *queuesGroup = qobject_cast<QQuickItem *>(withProperty(window, "objectName", "navigation-queues"));
+        QVERIFY(fileTypesGroup && queuesGroup);
+        QVERIFY(!window->property("filesExpanded").toBool());
+        QVERIFY(!window->property("queuesExpanded").toBool());
+        fileTypesGroup->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(window->property("filesExpanded").toBool());
+        QCOMPARE(window->property("filter").toString(), "all");
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!window->property("filesExpanded").toBool());
+        queuesGroup->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Enter);
+        QTRY_VERIFY(window->property("queuesExpanded").toBool());
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(!window->property("queuesExpanded").toBool());
+        QCOMPARE(window->property("filter").toString(), "all");
+        QCOMPARE(window->title(), QString("IDM Native"));
+        QCOMPARE(columnKeys(window), QStringList({"name", "status", "total", "speed"}));
+        auto *advancedColumns = window->findChild<QObject *>("advancedColumnsAction");
+        QVERIFY(advancedColumns);
+        QVERIFY(!advancedColumns->property("checked").toBool());
+        QVERIFY(QMetaObject::invokeMethod(advancedColumns, "trigger", Q_ARG(QObject *, nullptr)));
+        QTRY_VERIFY(advancedColumns->property("checked").toBool());
+        const auto expandedColumns = columnKeys(window);
+        QCOMPARE(expandedColumns.size(), 7);
+        QVERIFY(expandedColumns.contains("eta"));
+        QVERIFY(expandedColumns.contains("created"));
+        QVERIFY(expandedColumns.contains("description"));
+        QVERIFY(QMetaObject::invokeMethod(advancedColumns, "trigger", Q_ARG(QObject *, nullptr)));
+        QTRY_VERIFY(!advancedColumns->property("checked").toBool());
+        QCOMPARE(columnKeys(window), QStringList({"name", "status", "total", "speed"}));
         QCOMPARE(theme.accent(), "#F8C100");
         QVERIFY2(manager.error().isEmpty(), qPrintable(manager.error()));
         QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join('\n')));
         QTest::qWait(100);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-empty.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-empty.png"));
+
+        fileTypesGroup->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(window->property("filesExpanded").toBool());
+        auto *documentsItem = qobject_cast<QQuickItem *>(withProperty(window, "objectName", "navigation-Documents"));
+        QVERIFY(documentsItem);
+        QTRY_VERIFY(documentsItem->isVisible());
+        documentsItem->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_COMPARE(window->property("filter").toString(), QString("Documents"));
+        window->setProperty("filter", "all");
+        fileTypesGroup->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!window->property("filesExpanded").toBool());
+        window->contentItem()->forceActiveFocus();
 
         auto *emptyState = window->findChild<QQuickItem *>("emptyState");
         auto *addDownload = window->findChild<QQuickItem *>("addDownloadButton");
@@ -147,11 +220,29 @@ private slots:
         auto *moreMenu = window->findChild<QObject *>("moreActionsMenu");
         QVERIFY(moreMenu);
         QTRY_VERIFY(moreMenu->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(moreMenu, "close"));
+        QTest::keyClick(window, Qt::Key_Down);
+        QVERIFY(moreMenu->property("currentIndex").toInt() >= 0);
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-more-menu.png"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!moreMenu->property("visible").toBool());
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, headerButton.center().toPoint());
         auto *input = window->findChild<QQuickItem *>("urlInput");
         QVERIFY(input);
         QTRY_VERIFY(input->hasActiveFocus());
+        auto *urlOptions = window->findChild<QQuickItem *>("urlOptionsDisclosure");
+        auto *authorization = window->findChild<QQuickItem *>("useAuthorization");
+        QVERIFY(urlOptions && authorization);
+        QVERIFY(!urlOptions->property("checked").toBool());
+        QVERIFY(!authorization->isVisible());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-url-quiet.png"));
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, urlOptions->mapToScene(urlOptions->boundingRect().center()).toPoint());
+        QTRY_VERIFY(urlOptions->property("checked").toBool());
+        QTRY_VERIFY(authorization->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, urlOptions->mapToScene(urlOptions->boundingRect().center()).toPoint());
+        QTRY_VERIFY(!authorization->isVisible());
+        input->forceActiveFocus();
         for (const char character : QByteArray("https://example.test/q?query=q q"))
             QTest::keyClick(window, character);
         QCOMPARE(input->property("text").toString(), "https://example.test/q?query=q q");
@@ -166,7 +257,7 @@ private slots:
         QTRY_VERIFY(withProperty(window, "text", QString::fromUtf8("Overførsler")));
         QCOMPARE(QGuiApplication::layoutDirection(), Qt::LeftToRight);
         QTest::qWait(100);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-danish.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-danish.png"));
 
         QVERIFY(writeFile(languagePath, "ar\n"));
         QTRY_COMPARE(translator.language(), "ar");
@@ -237,16 +328,47 @@ private slots:
         const auto url = QString("http://127.0.0.1:%1/ui.bin").arg(server.serverPort());
         input->setProperty("text", url);
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-url.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-url.png"));
         QTest::keyClick(window, Qt::Key_Return);
         auto *information = window->findChild<QObject *>("infoDialog");
         QVERIFY(information);
         QTRY_VERIFY(information->property("visible").toBool());
+        auto *infoOptions = window->findChild<QQuickItem *>("infoOptionsDisclosure");
+        auto *address = window->findChild<QQuickItem *>("addressInput");
+        QVERIFY(infoOptions && address);
+        QVERIFY(!infoOptions->property("checked").toBool());
+        QVERIFY(!address->isVisible());
         auto *directory = window->findChild<QObject *>("directoryInput");
         QVERIFY(directory);
         directory->setProperty("text", temporary.path() + "/output");
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-info.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-info.png"));
+        auto *infoMedia = window->findChild<QObject *>("infoMedia");
+        auto *mediaFormat = window->findChild<QQuickItem *>("mediaFormat");
+        QVERIFY(infoMedia && mediaFormat);
+        infoMedia->setProperty("checked", true);
+        QTRY_VERIFY(infoOptions->property("checked").toBool());
+        QTRY_VERIFY(address->isVisible());
+        auto *qualityScroll = window->findChild<QObject *>("infoScroll");
+        QVERIFY(qualityScroll);
+        auto *qualityContent = qualityScroll->property("contentItem").value<QQuickItem *>();
+        QVERIFY(qualityContent);
+        QTest::qWait(50);
+        const qreal qualityY = mediaFormat->mapToItem(qualityContent, QPointF()).y() + qualityContent->property("contentY").toReal();
+        qualityContent->setProperty("contentY", std::clamp(qualityY, 0.0, std::max(0.0, qualityContent->property("contentHeight").toReal() - qualityContent->height())));
+        QTRY_VERIFY(mediaFormat->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, mediaFormat->mapToScene(mediaFormat->boundingRect().center()).toPoint());
+        auto *qualityPopup = mediaFormat->property("popup").value<QObject *>();
+        QVERIFY(qualityPopup);
+        QTRY_VERIFY(qualityPopup->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_Down);
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-quality-menu.png"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!qualityPopup->property("visible").toBool());
+        QCOMPARE(mediaFormat->property("currentIndex").toInt(), 1);
+        QCOMPARE(mediaFormat->property("currentText").toString(), "1080p");
+        infoMedia->setProperty("checked", false);
         auto *start = window->findChild<QObject *>("startDownloadButton");
         QVERIFY(start);
         QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
@@ -261,18 +383,45 @@ private slots:
         QVERIFY(transfer);
         QTRY_VERIFY(transfer->property("visible").toBool());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-transfer.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-transfer.png"));
+        auto *transferDetails = window->findChild<QQuickItem *>("transferDetailsDisclosure");
+        auto *transferConnections = window->findChild<QQuickItem *>("transferConnections");
+        QVERIFY(transferDetails && transferConnections);
+        QVERIFY(!transferDetails->property("checked").toBool());
+        QVERIFY(!transferConnections->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, transferDetails->mapToScene(transferDetails->boundingRect().center()).toPoint());
+        QTRY_VERIFY(transferDetails->property("checked").toBool());
+        QTRY_VERIFY(transferConnections->isVisible());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-transfer-details.png"));
         QVERIFY(QMetaObject::invokeMethod(transfer, "close"));
         QVERIFY(writeFile(colorsPath, "accent = '#FFD60A'\n"));
         QTRY_COMPARE(theme.accent(), "#FFD60A");
         QTest::qWait(100);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-download.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-download.png"));
         auto *options = window->findChild<QObject *>("optionsDialog");
         QVERIFY(options);
         QVERIFY(QMetaObject::invokeMethod(options, "open"));
         auto *darkToggle = window->findChild<QQuickItem *>("darkModeToggle");
         QVERIFY(darkToggle);
         QTRY_VERIFY(darkToggle->isVisible());
+        window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex", 6);
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-browser-integration.png"));
+        auto *browserSetup = window->findChild<QQuickItem *>("browserSetupDisclosure");
+        auto *browserInstall = window->findChild<QQuickItem *>("browserInstallButton");
+        auto *browserInstructions = window->findChild<QQuickItem *>("browserSetupInstructions");
+        QVERIFY(browserSetup && browserInstall && browserInstructions);
+        QVERIFY(!browserSetup->property("checked").toBool());
+        QVERIFY(browserInstall->isVisible());
+        QVERIFY(!browserInstructions->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, browserSetup->mapToScene(browserSetup->boundingRect().center()).toPoint());
+        QTRY_VERIFY(browserSetup->property("checked").toBool());
+        QTRY_VERIFY(browserInstall->isVisible());
+        QTRY_VERIFY(browserInstructions->isVisible());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-browser-setup.png"));
+        window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex", 0);
         const bool initialDarkMode = window->property("darkMode").toBool();
         QVERIFY(initialDarkMode);
         const QColor initialCanvas = window->property("canvas").value<QColor>();
@@ -287,10 +436,34 @@ private slots:
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, togglePoint);
         QTRY_COMPARE(window->property("darkMode").toBool(), initialDarkMode);
         QTRY_COMPARE(window->color(), initialCanvas);
+        const bool storedDarkMode = automation.preferences().value("darkMode").toBool();
+        QCOMPARE(initialDarkMode, storedDarkMode);
+        for (const bool escape : {true, false}) {
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, togglePoint);
+            QTRY_COMPARE(window->property("darkMode").toBool(), !storedDarkMode);
+            QCOMPARE(automation.preferences().value("darkMode").toBool(), storedDarkMode);
+            if (escape) {
+                QTest::keyClick(window, Qt::Key_Escape);
+            } else {
+                auto *header = options->property("header").value<QQuickItem *>();
+                QVERIFY(header);
+                auto *close = qobject_cast<QQuickItem *>(withProperty(header, "text", "×"));
+                QVERIFY(close);
+                QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, close->mapToScene(close->boundingRect().center()).toPoint());
+            }
+            QTRY_VERIFY(!options->property("visible").toBool());
+            QCOMPARE(window->property("darkMode").toBool(), storedDarkMode);
+            QCOMPARE(automation.preferences().value("darkMode").toBool(), storedDarkMode);
+            QTRY_COMPARE(window->color(), initialCanvas);
+            QVERIFY(QMetaObject::invokeMethod(options, "open"));
+            QTRY_VERIFY(darkToggle->isVisible());
+        }
         QVERIFY(QMetaObject::invokeMethod(options, "close"));
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-dark.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-dark.png"));
         window->setProperty("darkMode", false);
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-light.png"));
         QMimeData mime;
         mime.setUrls({QUrl("https://example.test/one.zip"),QUrl("file:///etc/passwd"),QUrl("https://example.test/two.zip")});
         QDragEnterEvent enter(QPointF(400,300), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
@@ -326,14 +499,35 @@ private slots:
         auto *label = qobject_cast<QQuickItem *>(withProperty(table, "text", "later.zip"));
         QVERIFY(label);
         const QPoint rowPoint = label->mapToScene(QPointF(label->width()/2,label->height()/2)).toPoint();
+        QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, rowPoint);
+        auto *rowMenu = window->findChild<QObject *>("rowContextMenu");
+        QVERIFY(rowMenu);
+        QTRY_VERIFY(rowMenu->property("visible").toBool());
+        QCOMPARE(window->property("selectedId").toString(), manager.downloads().last().toMap().value("id").toString());
+        auto *resumeAction = withProperty(rowMenu, "text", "Resume");
+        auto *stopAction = withProperty(rowMenu, "text", "Stop");
+        QVERIFY(resumeAction && stopAction);
+        QVERIFY(resumeAction->property("enabled").toBool());
+        QVERIFY(!stopAction->property("enabled").toBool());
+        QTest::keyClick(window, Qt::Key_Down);
+        QVERIFY(rowMenu->property("currentIndex").toInt() >= 0);
+        QCOMPARE(window->property("selectedId").toString(), manager.downloads().last().toMap().value("id").toString());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-context-menu.png"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!rowMenu->property("visible").toBool());
+        QCOMPARE(manager.downloads().size(), 2);
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, rowPoint);
         QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, rowPoint);
         QTRY_VERIFY(transfer->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(transfer, "close"));
-        auto *startQueue = window->findChild<QObject *>("startQueueButton");
+        window->setProperty("filter", "queue:Main download queue");
+        auto *startQueue = window->findChild<QQuickItem *>("startQueueButton");
         QVERIFY(startQueue);
-        QVERIFY(QMetaObject::invokeMethod(startQueue, "clicked"));
+        QTRY_VERIFY(startQueue->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, startQueue->mapToScene(startQueue->boundingRect().center()).toPoint());
         QTRY_COMPARE_WITH_TIMEOUT(manager.downloads().last().toMap().value("status").toString(), "complete", 10000);
+        window->setProperty("filter", "all");
         const auto queuedPath = manager.downloads().last().toMap().value("path").toString();
         QTest::keyClick(window, Qt::Key_Delete);
         auto *remove = window->findChild<QObject *>("removeDialog");
@@ -413,7 +607,7 @@ private slots:
         QTRY_VERIFY(siteContent->property("contentHeight").toReal() > siteContent->height());
         siteContent->setProperty("contentY",siteContent->property("contentHeight").toReal()-siteContent->height());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-custom-headers.png"));
+        QVERIFY(capture(window, "/tmp/idm-custom-headers.png"));
         auto *hostItem=qobject_cast<QQuickItem *>(siteHost);
         QVERIFY(hostItem);
         const auto hostPosition=hostItem->mapToScene(QPointF());
@@ -472,6 +666,119 @@ private slots:
         qApp->removeTranslator(&translator);
     }
 
+    void brandedMenusAndTransferScreenshots() {
+        qmlWarnings.clear();
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        QVERIFY(writeFile(temporary.filePath("language"), "en\n"));
+        Theme theme(temporary.path());
+        Translator translator(temporary.filePath("language"));
+        DownloadManager manager(temporary.filePath("state"));
+        Automation automation(&manager, temporary.filePath("state"), nullptr,
+                              [](const QStringList &, std::function<void(int,const QString &)> done) { done(0, {}); });
+        QVERIFY(automation.configure({{"notifications",false},{"sound",false}}));
+        PortalPicker picker;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("picker", &picker);
+        engine.rootContext()->setContextProperty("automation", &automation);
+        engine.rootContext()->setContextProperty("backend", &manager);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.load(QUrl("qrc:/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_VERIFY(window->isActive());
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            while (auto *socket = server.nextPendingConnection()) {
+                connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                    const auto request = socket->property("request").toByteArray() + socket->readAll();
+                    socket->setProperty("request", request);
+                    if (socket->property("responded").toBool() || !request.contains("\r\n\r\n")) return;
+                    socket->setProperty("responded", true);
+                    const bool slow = request.contains("/slow-");
+                    const int total = slow ? 8 * 1024 * 1024 : 85732;
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(total) + "\r\nConnection: close\r\n\r\n");
+                    if (request.startsWith("HEAD ")) { socket->disconnectFromHost(); return; }
+                    if (!slow) { socket->write(QByteArray(total, 'd')); socket->disconnectFromHost(); return; }
+                    auto *timer = new QTimer(socket);
+                    timer->setInterval(80);
+                    connect(timer, &QTimer::timeout, socket, [socket, timer, total] {
+                        const int sent = socket->property("sent").toInt();
+                        const int count = std::min(131072, total - sent);
+                        socket->write(QByteArray(count, 'd'));
+                        socket->setProperty("sent", sent + count);
+                        if (sent + count == total) { timer->stop(); socket->disconnectFromHost(); }
+                    });
+                    timer->start();
+                });
+            }
+        });
+        const auto origin = QString("http://127.0.0.1:%1/").arg(server.serverPort());
+        QStringList ids;
+        const QStringList filenames{"Design resources.zip", "Field notes.pdf", "Studio session.flac", "Linux installer.iso", "Documentary - chapter 04.mp4", "Typography reference.zip"};
+        for (int i = 0; i < filenames.size(); ++i) {
+            const auto id = manager.addRequest({{"url", origin + (i >= 4 ? "slow-" : "file-") + QString::number(i)},
+                                               {"filename", filenames[i]}, {"directory", temporary.filePath("downloads")},
+                                               {"description", i >= 4 ? "Captured from the browser" : ""}, {"start", i < 2 || i >= 4}});
+            QVERIFY2(!id.isEmpty(), qPrintable(manager.error()));
+            ids << id;
+        }
+        QTRY_COMPARE(manager.downloads().first().toMap().value("status").toString(), "complete");
+        QTRY_VERIFY(manager.downloads().last().toMap().value("received").toLongLong() > 0);
+        window->setProperty("selectedId", ids.last());
+        QTest::qWait(1600);
+        QVERIFY(capture(window, "/tmp/idm-native-overview.png"));
+        auto *menuBar = window->findChild<QQuickItem *>("mainMenuBar");
+        QVERIFY(menuBar);
+        auto *tasksItem = qobject_cast<QQuickItem *>(withProperty(menuBar, "text", "Tasks"));
+        auto *tasksMenu = window->findChild<QObject *>("tasksMenu");
+        QVERIFY(tasksItem && tasksMenu);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, tasksItem->mapToScene(tasksItem->boundingRect().center()).toPoint());
+        QTRY_VERIFY(tasksMenu->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_Down);
+        QVERIFY(tasksMenu->property("currentIndex").toInt() >= 0);
+        QCOMPARE(window->property("selectedId").toString(), ids.last());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-top-menu.png"));
+        QSignalSpy tasksClosed(tasksMenu, SIGNAL(closed()));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!tasksClosed.isEmpty());
+        QVERIFY(!tasksMenu->property("visible").toBool());
+        auto *table = window->findChild<QQuickItem *>("downloadTable");
+        auto *label = qobject_cast<QQuickItem *>(withProperty(table, "text", filenames.last()));
+        QVERIFY(label);
+        QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, label->mapToScene(label->boundingRect().center()).toPoint());
+        auto *rowMenu = window->findChild<QObject *>("rowContextMenu");
+        QVERIFY(rowMenu);
+        QTRY_VERIFY(rowMenu->property("opened").toBool());
+        QSignalSpy updatesWhileMenuOpen(&manager, &DownloadManager::changed);
+        QTRY_VERIFY(updatesWhileMenuOpen.count() > 0);
+        QVERIFY2(rowMenu->property("opened").toBool(), "Refreshing active transfers must keep their context menu open.");
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-context-menu.png"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!rowMenu->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_Return);
+        auto *transfer = window->findChild<QObject *>("transferDialog");
+        QVERIFY(transfer);
+        QTRY_VERIFY(transfer->property("visible").toBool());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-active-transfer.png"));
+        QVERIFY(QMetaObject::invokeMethod(transfer, "close"));
+        manager.pauseAll();
+        QVERIFY(automation.configure({{"darkMode", false}}));
+        QTRY_VERIFY(!window->property("darkMode").toBool());
+        QTest::qWait(200);
+        QVERIFY(capture(window, "/tmp/idm-native-light.png"));
+        QVERIFY2(qmlWarnings.isEmpty(), qPrintable(qmlWarnings.join('\n')));
+    }
+
     void minimumWindowAndLargeQueue() {
         qmlWarnings.clear();
         QTemporaryDir temporary;
@@ -523,21 +830,27 @@ private slots:
         const auto rowPosition=name->mapToItem(table,QPointF());
         QVERIFY(rowPosition.y()>=0 && rowPosition.y()+name->height()<=table->height());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-minimum.png"));
         QTest::mouseMove(window,name->mapToScene(QPointF(name->width()/2,name->height()/2)).toPoint());
         auto *tip=name->findChild<QObject *>("downloadCellTip");
         QVERIFY(tip);
         QTRY_VERIFY_WITH_TIMEOUT(tip->property("visible").toBool(),2000);
         QCOMPARE(tip->property("text").toString(),lastName);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-long-name-tooltip.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-long-name-tooltip.png"));
         QTest::mouseMove(window,QPoint(5,5));
         auto *horizontal=window->findChild<QQuickItem *>("tableScroll");
-        QVERIFY(horizontal);
-        QVERIFY(horizontal->property("contentWidth").toReal()>horizontal->width());
+        auto *advancedColumns=window->findChild<QObject *>("advancedColumnsAction");
+        QVERIFY(horizontal && advancedColumns);
+        QVERIFY(horizontal->property("contentWidth").toReal() <= horizontal->width() + 1);
+        QVERIFY(QMetaObject::invokeMethod(advancedColumns, "trigger", Q_ARG(QObject *, nullptr)));
+        QTRY_VERIFY(advancedColumns->property("checked").toBool());
+        QTRY_VERIFY(horizontal->property("contentWidth").toReal()>horizontal->width());
         horizontal->setProperty("contentX",horizontal->property("contentWidth").toReal()-horizontal->width());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum-scrolled.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-minimum-scrolled.png"));
         horizontal->setProperty("contentX",0);
+        QVERIFY(QMetaObject::invokeMethod(advancedColumns, "trigger", Q_ARG(QObject *, nullptr)));
+        QTRY_VERIFY(!advancedColumns->property("checked").toBool());
         QTest::keyClick(window,Qt::Key_Return);
         auto *transfer=window->findChild<QObject *>("transferDialog");
         QVERIFY(transfer);
@@ -548,20 +861,60 @@ private slots:
         QVERIFY(closeButton);
         QTRY_VERIFY(closeButton->mapToScene(QPointF(0,closeButton->height())).y()<=window->height());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-long-name.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-long-name.png"));
         QVERIFY(QMetaObject::invokeMethod(transfer,"close"));
+        auto *information = window->findChild<QObject *>("infoDialog");
+        auto *infoScroll = window->findChild<QObject *>("infoScroll");
+        auto *startDownload = window->findChild<QQuickItem *>("startDownloadButton");
+        auto *downloadLater = window->findChild<QQuickItem *>("downloadLaterButton");
+        QVERIFY(information && infoScroll && startDownload && downloadLater);
+        window->findChild<QObject *>("addressInput")->setProperty("text", "https://downloads.example/design-resources.zip");
+        window->findChild<QObject *>("filenameInput")->setProperty("text", "Design resources.zip");
+        window->findChild<QObject *>("directoryInput")->setProperty("text", temporary.filePath("files"));
+        window->findChild<QObject *>("infoMedia")->setProperty("checked", true);
+        window->findChild<QObject *>("useRequestHeaders")->setProperty("checked", true);
+        window->findChild<QObject *>("requestHeadersInput")->setProperty("text", "{\"X-Project\": \"Design resources\"}");
+        QVERIFY(QMetaObject::invokeMethod(information, "open"));
+        QTRY_VERIFY(information->property("visible").toBool());
+        auto *infoContent = infoScroll->property("contentItem").value<QQuickItem *>();
+        QVERIFY(infoContent);
+        QTRY_VERIFY(infoContent->property("contentHeight").toReal() > infoContent->height());
+        QTest::qWait(100);
+        const QRectF windowBounds(0, 0, window->width(), window->height());
+        for (auto *button : {startDownload, downloadLater}) {
+            QTRY_VERIFY(button->isVisible());
+            QVERIFY(windowBounds.contains(button->mapRectToScene(button->boundingRect())));
+        }
+        const auto actionPosition = startDownload->mapRectToScene(startDownload->boundingRect());
+        infoContent->setProperty("contentY", infoContent->property("contentHeight").toReal() - infoContent->height());
+        QTRY_VERIFY(infoContent->property("contentY").toReal() > 0);
+        auto *headersEditor = window->findChild<QQuickItem *>("requestHeadersInput");
+        QVERIFY(headersEditor);
+        QTRY_VERIFY(headersEditor->mapToItem(infoContent, QPointF(0, headersEditor->height())).y() <= infoContent->height());
+        QCOMPARE(startDownload->mapRectToScene(startDownload->boundingRect()), actionPosition);
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-minimum-info.png"));
+        QVERIFY(QMetaObject::invokeMethod(information, "close"));
         auto *options=window->findChild<QObject *>("optionsDialog");
         QVERIFY(options);
         QVERIFY(QMetaObject::invokeMethod(options,"open"));
         window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex",4);
         window->findChild<QObject *>("siteHost")->setProperty("text","downloads.example");
+        for (const auto *name : {"siteAuthenticationDisclosure", "siteHeadersDisclosure"}) {
+            auto *disclosure = window->findChild<QQuickItem *>(name);
+            QVERIFY(disclosure);
+            if (!disclosure->property("checked").toBool())
+                QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, disclosure->mapToScene(disclosure->boundingRect().center()).toPoint());
+            QTRY_VERIFY(disclosure->property("checked").toBool());
+        }
         auto *scroll=window->findChild<QObject *>("siteScroll");
         QVERIFY(scroll);
         auto *content=scroll->property("contentItem").value<QQuickItem *>();
         QVERIFY(content);
+        QTest::qWait(50);
         content->setProperty("contentY",content->property("contentHeight").toReal()-content->height());
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-native-minimum-sites.png"));
+        QVERIFY(capture(window, "/tmp/idm-native-minimum-sites.png"));
         QVERIFY(options->property("height").toReal()<=window->height());
         auto *host=qobject_cast<QQuickItem *>(window->findChild<QObject *>("siteHost"));
         auto *save=qobject_cast<QQuickItem *>(window->findChild<QObject *>("saveSiteButton"));
@@ -609,9 +962,17 @@ private slots:
         auto *saveOptions=window->findChild<QObject *>("saveOptionsButton");
         QVERIFY(directory && concurrency && rate && saveOptions);
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-options.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-options.png"));
         directory->setProperty("text",temporary.filePath("downloads"));
-        concurrency->setProperty("value",7);
+        window->findChild<QObject *>("optionsTabs")->setProperty("currentIndex", 1);
+        auto *concurrencyEditor = concurrency->property("contentItem").value<QQuickItem *>();
+        QVERIFY(concurrencyEditor);
+        QTRY_VERIFY(concurrencyEditor->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, concurrencyEditor->mapToScene(concurrencyEditor->boundingRect().center()).toPoint());
+        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClick(window, Qt::Key_7);
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_COMPARE(concurrency->property("value").toInt(), 7);
         rate->setProperty("text","1024");
         QVERIFY(QMetaObject::invokeMethod(saveOptions,"clicked"));
         QTRY_VERIFY(!options->property("visible").toBool());
@@ -628,7 +989,22 @@ private slots:
         auto *queueStart=window->findChild<QObject *>("queueStart");
         auto *saveQueue=window->findChild<QObject *>("saveQueueButton");
         QVERIFY(queueName && queueConcurrency && queueStart && saveQueue);
-        queueName->setProperty("editText","Nightly");
+        auto *timing = window->findChild<QQuickItem *>("scheduleTimingDisclosure");
+        QVERIFY(timing);
+        QVERIFY(!timing->property("checked").toBool());
+        QVERIFY(!qobject_cast<QQuickItem *>(queueStart)->isVisible());
+        QTest::qWait(100);
+        QVERIFY(capture(window, "/tmp/idm-native-scheduler-quiet.png"));
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, timing->mapToScene(timing->boundingRect().center()).toPoint());
+        QTRY_VERIFY(timing->property("checked").toBool());
+        QTRY_VERIFY(qobject_cast<QQuickItem *>(queueStart)->isVisible());
+        QTest::qWait(100);
+        auto *queueEditor = queueName->property("contentItem").value<QQuickItem *>();
+        QVERIFY(queueEditor);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, queueEditor->mapToScene(queueEditor->boundingRect().center()).toPoint());
+        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+        for (const char character : QByteArray("Nightly")) QTest::keyClick(window, character);
+        QTRY_COMPARE(queueName->property("editText").toString(), "Nightly");
         queueConcurrency->setProperty("value",2);
         const auto nextYear=QDateTime::currentDateTime().addYears(1).toString(Qt::ISODate);
         queueStart->setProperty("text",nextYear);
@@ -640,7 +1016,7 @@ private slots:
         QCOMPARE(QDateTime::fromString(nightly.value("startAt").toString(),Qt::ISODate).toSecsSinceEpoch(),QDateTime::fromString(nextYear,Qt::ISODate).toSecsSinceEpoch());
         QVERIFY(QMetaObject::invokeMethod(scheduler,"open"));
         QTest::qWait(50);
-        QVERIFY(window->grabWindow().save("/tmp/idm-classic-scheduler.png"));
+        QVERIFY(capture(window, "/tmp/idm-classic-scheduler.png"));
         QVERIFY(QMetaObject::invokeMethod(scheduler,"close"));
 
         const auto id=automation.enqueue({{"url","http://127.0.0.1:9/queued.bin"},{"start",false}});

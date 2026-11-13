@@ -111,7 +111,8 @@ try {
   const target=(await cdp.send('Target.createTarget',{url:origin+'/'})).targetId;const page=await cdp.attach(target);await cdp.send('Page.enable',{},page);
   await wait(()=>cdp.evaluate(page,'Boolean(document.getElementById("idm-native-capture-root")?.shadowRoot)'), 'real extension content script');
   await wait(()=>cdp.evaluate(page,'!document.getElementById("idm-native-capture-root").hidden'), 'floating video capture button');
-  await cdp.evaluate(page,'document.getElementById("idm-native-capture-root").shadowRoot.querySelector("button").click()');
+  await cdp.evaluate(page,'document.getElementById("idm-native-capture-root").shadowRoot.querySelector(".capture-toggle").click()');
+  assert(await cdp.evaluate(page,'!document.getElementById("idm-native-capture-root").shadowRoot.querySelector(".panel").hidden'),'Capture toggle must open the actual panel');
   await cdp.evaluate(page,'[...document.getElementById("idm-native-capture-root").shadowRoot.querySelectorAll("select")][0].value=location.origin+"/direct.mp4"');
   await cdp.evaluate(page,'[...document.getElementById("idm-native-capture-root").shadowRoot.querySelectorAll("button")].find(b=>b.textContent==="Download").click()');
   const direct=await completed(origin+'/direct.mp4');

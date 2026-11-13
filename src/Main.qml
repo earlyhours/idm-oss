@@ -7,7 +7,7 @@ ApplicationWindow {
     width: 1220; height: 760
     minimumWidth: 820; minimumHeight: 500
     visible: typeof startHidden === "undefined" || !startHidden
-    title: qsTr("Internet Download Manager")
+    title: qsTr("IDM Native")
     color: win.canvas
     font.family: "Adwaita Sans"
     font.pixelSize: 13
@@ -31,21 +31,23 @@ ApplicationWindow {
     readonly property bool automationAvailable: typeof automation !== "undefined"
     readonly property var controller: automationAvailable ? automation : backend
     readonly property var preferences: automationAvailable ? automation.preferences : ({})
+    FontLoader { id: brandFont; source: "qrc:/fonts/GeistPixel-Square.ttf" }
+    readonly property string displayFont: brandFont.status === FontLoader.Ready ? brandFont.name : win.font.family
     property bool darkMode: true
-    readonly property color canvas: darkMode ? "#0b0b0c" : "#f7f6f3"
-    readonly property color panel: darkMode ? "#131314" : "#f0efeb"
-    readonly property color surface: darkMode ? "#0e0e0f" : "#fcfbf8"
+    readonly property color canvas: darkMode ? "#121315" : "#f7f6f3"
+    readonly property color panel: darkMode ? "#191a1d" : "#f0efeb"
+    readonly property color surface: darkMode ? "#141518" : "#fcfbf8"
     readonly property color ink: darkMode ? "#f2f1ec" : "#272522"
-    readonly property color muted: darkMode ? "#a39e96" : "#6c675f"
-    readonly property color edge: darkMode ? "#282727" : "#dedbd4"
-    readonly property color selection: darkMode ? "#302016" : "#f7e4d5"
-    readonly property color hoverSurface: darkMode ? "#212122" : "#e9e6df"
+    readonly property color muted: darkMode ? "#a3a3a6" : "#6c675f"
+    readonly property color edge: darkMode ? "#2c2d31" : "#dedbd4"
+    readonly property color selection: darkMode ? "#2b2018" : "#f7e4d5"
+    readonly property color hoverSurface: darkMode ? "#222327" : "#e9e6df"
     readonly property color accent: "#ef5a00"
     readonly property color positive: darkMode ? "#79bd92" : "#32704a"
     readonly property color danger: darkMode ? "#ff927e" : "#a73324"
     readonly property string mono: "Adwaita Mono"
-    readonly property int controlRadius: Math.min(6, theme.radius)
-    readonly property int rowHeight: 42
+    readonly property int controlRadius: 6
+    readonly property int rowHeight: 52
     property var droppedUrls: []
     property string filter: "all"
     property string selectedId: ""
@@ -54,8 +56,8 @@ ApplicationWindow {
     property string sortKey: "created"
     property bool descending: true
     property bool categoriesVisible: true
-    property bool filesExpanded: true
-    property bool queuesExpanded: true
+    property bool filesExpanded: false
+    property bool queuesExpanded: false
     property bool helpVisible: shortcutsDialog.visible
     property int defaultConnections: 4
     property string defaultDirectory: backend.downloadDirectory
@@ -79,14 +81,22 @@ ApplicationWindow {
             return descending ? -n : n
         })
     }
-    property bool editing: urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible
+    readonly property bool menusOpen: tasksMenu.visible || downloadsMenu.visible || viewMenu.visible || helpMenu.visible || rowMenu.visible || queueMenu.visible || moreActions.visible
+    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible
     readonly property bool bridgeAvailable: typeof browserBridge !== "undefined" && browserBridge.available
     readonly property string bridgeError: typeof browserBridge !== "undefined" ? browserBridge.error : ""
+    property bool showDetailsColumns: false
+    readonly property real primaryTableWidth: Math.max(548, tableScroll.width)
     readonly property var columns: [
-        {key:"name", label:qsTr("File Name"), width:300}, {key:"total",label:qsTr("Size"),width:100},
-        {key:"status",label:qsTr("Status"),width:128}, {key:"eta",label:qsTr("Time left"),width:88},
-        {key:"speed",label:qsTr("Transfer rate"),width:120}, {key:"created",label:qsTr("Date added"),width:150},
-        {key:"description",label:qsTr("Description"),width:220}]
+        {key:"name", label:qsTr("File"), width:primaryTableWidth-336},
+        {key:"status",label:qsTr("Progress"),width:144},
+        {key:"total",label:qsTr("Size"),width:88},
+        {key:"speed",label:qsTr("Speed"),width:104}
+    ].concat(showDetailsColumns ? [
+        {key:"eta",label:qsTr("Time left"),width:88},
+        {key:"created",label:qsTr("Date added"),width:160},
+        {key:"description",label:qsTr("Description"),width:240}
+    ] : [])
     function navigationCount(key) {
         if (key === "queues") return ""
         let policies = win.automationAvailable ? automation.jobPolicies : {}
@@ -97,7 +107,7 @@ ApplicationWindow {
         if (value == null || value < 0) return qsTr("Unknown")
         let units = ["B","KB","MB","GB","TB"], n = Number(value), i = 0
         while (n >= 1024 && i < units.length-1) { n /= 1024; i++ }
-        return n.toLocaleString(Qt.locale(), 'f', i ? 2 : 0) + " " + units[i]
+        return n.toLocaleString(Qt.locale(), 'f', i ? 1 : 0) + " " + units[i]
     }
     function duration(seconds) {
         if (seconds == null || seconds < 0) return ""
@@ -105,9 +115,13 @@ ApplicationWindow {
         return (h ? h+":"+String(m).padStart(2,"0") : m) + ":" + String(s%60).padStart(2,"0")
     }
     function running(d) { return d && (d.status === "downloading" || d.status === "probing") }
+    function sourceHost(d) {
+        let match = String(d.url || "").match(/^[a-z]+:\/\/(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#]+)/i)
+        return match ? match[1] : d.category || ""
+    }
     function statusLabel(d) {
-        if (d.status === "downloading" && d.total > 0) return (100*d.received/d.total).toFixed(2)+"%"
-        return ({probing:qsTr("Connecting..."),downloading:qsTr("Receiving data..."),paused:qsTr("Stopped"),complete:qsTr("Complete"),error:qsTr("Error")})[d.status] || d.status
+        if (d.status === "downloading" && d.total > 0) return (100*d.received/d.total).toFixed(0)+"%"
+        return ({probing:qsTr("Connecting..."),downloading:qsTr("Downloading"),paused:qsTr("Paused"),complete:qsTr("Complete"),error:qsTr("Error")})[d.status] || d.status
     }
     function cell(d,key) {
         if (key === "total") return bytes(d.total)
@@ -293,14 +307,23 @@ ApplicationWindow {
     Shortcut { sequence: "Up"; enabled: !win.editing && !transferDialog.visible; onActivated: win.moveSelection(-1) }
     Shortcut { sequence: "Down"; enabled: !win.editing && !transferDialog.visible; onActivated: win.moveSelection(1) }
     Shortcut { sequence: "F1"; onActivated: shortcutsDialog.open() }
-    Shortcut { sequence: "Menu"; enabled: !win.editing && !!win.selected; onActivated: rowMenu.popup() }
+    Shortcut {
+        sequence: "Menu"; enabled: !win.editing && !!win.selected
+        onActivated: {
+            let item = rows.itemAtIndex(win.shown.findIndex(d => d.id === win.selectedId))
+            let point = (item || rows).mapToItem(win.contentItem, 20, item ? item.height : 0)
+            rowMenu.popup(win.contentItem, point.x, point.y)
+        }
+    }
 
     component AppIcon: Image {
         property string kind: "add"
         property color tint: win.ink
         sourceSize.width: 24; sourceSize.height: 24
         width: 20; height: 20; fillMode: Image.PreserveAspectFit
-        source: {
+        source: win.iconSource(kind, tint)
+    }
+    function iconSource(kind, tint) {
             let paths = {
                 add:'<path d="M12 5v14M5 12h14"/>',
                 resume:'<path d="m8 5 11 7-11 7z"/>',
@@ -316,28 +339,37 @@ ApplicationWindow {
                 video:'<path d="M3 5h18v14H3zm7 4 5 3-5 3z"/>',
                 music:'<path d="M10 18V5l10-2v13M10 8l10-2"/><ellipse cx="6.5" cy="18" rx="3.5" ry="2.5"/><ellipse cx="16.5" cy="16" rx="3.5" ry="2.5"/>',
                 download:'<path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+                more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+                info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
                 chevron:'<path d="m9 6 6 6-6 6"/>'
             }
             return "data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="'+tint+'" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(paths[kind]||paths.file)+'</svg>')
         }
-    }
+
     component AppButton: Button {
         id: button
         property bool primary: false
-        implicitHeight: 32; implicitWidth: Math.max(82,contentItem.implicitWidth+28)
+        implicitHeight: 36; implicitWidth: Math.max(82,contentItem.implicitWidth+28)
         padding: 7; font.weight: Font.Medium
         background: Rectangle {
-            color: button.primary ? (button.down ? "#c84900" : button.hovered ? "#ff7422" : win.accent) : button.down ? win.selection : button.hovered ? win.hoverSurface : win.panel
+            color: button.primary ? (button.down ? "#e56219" : button.hovered ? "#ff8147" : win.accent) : button.down ? win.selection : button.hovered ? win.hoverSurface : win.panel
             border.width: button.activeFocus ? 2 : 1
             border.color: button.activeFocus ? theme.accent : button.primary ? win.accent : win.edge
             radius: win.controlRadius; opacity: button.enabled ? 1 : .4
+            Behavior on color { ColorAnimation { duration: 110 } }
         }
-        contentItem: Text { text: button.text; font: button.font; color: button.enabled ? (button.primary ? (button.down ? "#fffaf5" : "#1a1008") : win.ink) : win.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+        contentItem: Text { text: button.text; font: button.font; color: button.enabled ? (button.primary ? "#1a1008" : win.ink) : win.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
     }
     component AppField: TextField {
-        implicitHeight: 30; padding: 7; selectByMouse: true; color: win.ink
+        implicitHeight: 34; padding: 9; selectByMouse: true; color: win.ink
         placeholderTextColor: win.muted; selectionColor: win.selection; selectedTextColor: win.ink
         background: Rectangle { color: win.surface; radius: win.controlRadius; border.color: parent.activeFocus ? theme.accent : win.edge; border.width: parent.activeFocus ? 2 : 1 }
+    }
+    component AppTextArea: TextArea {
+        id: area
+        color: win.ink; placeholderTextColor: win.muted; selectByMouse: true; padding: 10
+        selectionColor: win.selection; selectedTextColor: win.ink
+        background: Rectangle { color: win.surface; radius: win.controlRadius; border.color: area.activeFocus ? theme.accent : win.edge; border.width: area.activeFocus ? 2 : 1 }
     }
     component AppTabButton: TabButton {
         id: tab
@@ -350,7 +382,7 @@ ApplicationWindow {
     }
     component AppCheckBox: CheckBox {
         id: check
-        implicitHeight: 28; spacing: 9; padding: 3
+        implicitHeight: Math.max(32, contentItem.implicitHeight+6); spacing: 10; padding: 3; hoverEnabled: true
         indicator: Rectangle {
             x: check.leftPadding; y: (check.height-height)/2; width: 17; height: 17
             color: check.checked ? win.accent : win.surface; radius: win.controlRadius
@@ -358,31 +390,46 @@ ApplicationWindow {
             border.width: check.activeFocus ? 2 : 1
             Text { anchors.centerIn: parent; text: "✓"; color: "#fffaf5"; font.pixelSize: 12; font.bold: true; visible: check.checked }
         }
-        contentItem: Text { text: check.text; color: check.enabled ? win.ink : win.muted; font: check.font; leftPadding: check.indicator.width+check.spacing; verticalAlignment: Text.AlignVCenter; wrapMode: Text.WordWrap }
+        contentItem: Text { text: check.text; color: check.enabled ? win.ink : win.muted; font: check.font; lineHeight: 1.35; leftPadding: check.indicator.width+check.spacing; verticalAlignment: Text.AlignVCenter; wrapMode: Text.WordWrap }
     }
     component NativeDialog: Dialog {
         id: dialog
-        padding: 16
-        background: Rectangle { color: win.panel; border.color: win.edge; radius: win.controlRadius }
-        header: Label {
-            text: dialog.title; color: win.ink; font.pixelSize: 16; font.weight: Font.DemiBold
-            leftPadding: 16; rightPadding: 16; topPadding: 18; bottomPadding: 14; elide: Text.ElideRight
+        padding: 20; topPadding: 16
+        background: Rectangle { color: win.panel; border.color: win.edge; radius: 10 }
+        header: Item {
+            implicitHeight: 58
+            RowLayout {
+                anchors.fill: parent; anchors.leftMargin: 20; anchors.rightMargin: 14; spacing: 10
+                Label { text: dialog.title; color: win.ink; font.pixelSize: 15; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
+                AppButton { text: "×"; Accessible.name: qsTr("Close dialog"); implicitWidth: 30; implicitHeight: 30; onClicked: dialog.reject() }
+            }
+            Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; anchors.leftMargin: 20; anchors.rightMargin: 20; height: 1; color: win.edge }
+        }
+        footer: DialogButtonBox {
+            visible: count > 0; standardButtons: dialog.standardButtons
+            leftPadding: 20; rightPadding: 20; bottomPadding: 16; topPadding: 8; spacing: 8
+            background: Item {}
+            delegate: AppButton {}
+            onAccepted: dialog.accept()
+            onRejected: dialog.reject()
         }
         Overlay.modal: Rectangle { color: win.darkMode ? "#99000000" : "#55000000" }
     }
     component Tool: Button {
         id: tool
         property string kind: "add"
-        implicitWidth: contentItem.implicitWidth+20; implicitHeight: 34
+        property bool showLabel: false
+        implicitWidth: showLabel ? contentItem.implicitWidth+20 : 36; implicitHeight: 36
         Accessible.name: text
         padding: 6; hoverEnabled: true
         background: Rectangle { color: tool.down ? win.selection : tool.hovered ? win.hoverSurface : "transparent"; border.color: tool.activeFocus ? theme.accent : "transparent"; radius: win.controlRadius }
         contentItem: RowLayout {
             spacing: 7; opacity: tool.enabled ? 1 : .3
             AppIcon { kind: tool.kind; tint: win.muted; Layout.preferredWidth: 17; Layout.preferredHeight: 17; Layout.alignment: Qt.AlignVCenter }
-            Text { text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; Layout.alignment: Qt.AlignVCenter }
+            Text { visible: tool.showLabel; text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; Layout.alignment: Qt.AlignVCenter }
         }
         ToolTip.visible: hovered
+        ToolTip.delay: 500
         ToolTip.text: text
     }
     menuBar: MenuBar {
@@ -407,36 +454,37 @@ ApplicationWindow {
                 border.color: menuItem.activeFocus ? theme.accent : "transparent"
             }
         }
-        Menu { title: qsTr("Tasks")
-            Action { text: qsTr("Add URL"); onTriggered: win.newDownload() }
-            MenuSeparator {}
-            Action { text: qsTr("Import downloads"); enabled: win.automationAvailable; onTriggered: { listDialog.importing=true; listDialog.open() } }
-            Action { text: qsTr("Export downloads"); enabled: win.automationAvailable; onTriggered: { listDialog.importing=false; listDialog.open() } }
-            Action { text: qsTr("Site Grabber"); enabled: win.automationAvailable; onTriggered: grabberDialog.open() }
-            MenuSeparator {}
-            Action { text: qsTr("Exit"); onTriggered: { win.controller.pauseAll(); Qt.quit() } }
+        IdmMenu { appWindow: win; id: tasksMenu; objectName: "tasksMenu"; title: qsTr("Tasks")
+            IdmMenuItem { appWindow: win; shortcutHint: "Ctrl+N"; text: qsTr("Add URL"); icon.source: win.iconSource("add", win.muted); onTriggered: win.newDownload() }
+            IdmMenuSeparator { appWindow: win; }
+            Action { text: qsTr("Import downloads"); icon.source: win.iconSource("download", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=true; listDialog.open() } }
+            Action { text: qsTr("Export downloads"); icon.source: win.iconSource("file", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=false; listDialog.open() } }
+            Action { text: qsTr("Site Grabber"); icon.source: win.iconSource("folder", win.muted); enabled: win.automationAvailable; onTriggered: grabberDialog.open() }
+            IdmMenuSeparator { appWindow: win; }
+            IdmMenuItem { appWindow: win; shortcutHint: "Ctrl+Q"; text: qsTr("Exit"); icon.source: win.iconSource("stopall", win.muted); onTriggered: { win.controller.pauseAll(); Qt.quit() } }
         }
-        Menu { title: qsTr("Downloads")
-            Action { text: qsTr("Resume"); enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onTriggered: win.controller.resume(win.selectedId) }
-            Action { text: qsTr("Stop"); enabled: win.running(win.selected); onTriggered: win.controller.pause(win.selectedId) }
-            Action { text: qsTr("Stop All"); onTriggered: win.controller.pauseAll() }
-            MenuSeparator {}
-            Action { text: qsTr("Delete"); enabled: !!win.selected; onTriggered: win.deleteSelected() }
-            Action { text: qsTr("Delete Completed"); onTriggered: win.controller.removeCompleted() }
-            MenuSeparator {}
-            Action { text: qsTr("Start Queue"); onTriggered: win.startQueue() }
-            Action { text: qsTr("Stop Queue"); onTriggered: win.stopQueue() }
-            Action { text: qsTr("Scheduler"); enabled: win.automationAvailable; onTriggered: schedulerDialog.open() }
-            Action { text: qsTr("Options"); onTriggered: optionsDialog.open() }
+        IdmMenu { appWindow: win; id: downloadsMenu; title: qsTr("Downloads")
+            Action { text: qsTr("Resume"); icon.source: win.iconSource("resume", win.muted); enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onTriggered: win.controller.resume(win.selectedId) }
+            Action { text: qsTr("Stop"); icon.source: win.iconSource("stop", win.muted); enabled: win.running(win.selected); onTriggered: win.controller.pause(win.selectedId) }
+            Action { text: qsTr("Stop All"); icon.source: win.iconSource("stopall", win.muted); onTriggered: win.controller.pauseAll() }
+            IdmMenuSeparator { appWindow: win; }
+            Action { text: qsTr("Delete"); icon.source: win.iconSource("delete", win.muted); enabled: !!win.selected; onTriggered: win.deleteSelected() }
+            Action { text: qsTr("Delete Completed"); icon.source: win.iconSource("completed", win.muted); onTriggered: win.controller.removeCompleted() }
+            IdmMenuSeparator { appWindow: win; }
+            Action { text: qsTr("Start Queue"); icon.source: win.iconSource("queue", win.muted); onTriggered: win.startQueue() }
+            Action { text: qsTr("Stop Queue"); icon.source: win.iconSource("queueStop", win.muted); onTriggered: win.stopQueue() }
+            Action { text: qsTr("Scheduler"); icon.source: win.iconSource("queue", win.muted); enabled: win.automationAvailable; onTriggered: schedulerDialog.open() }
+            Action { text: qsTr("Options"); icon.source: win.iconSource("options", win.muted); onTriggered: optionsDialog.open() }
         }
-        Menu { title: qsTr("View")
-            Action { text: qsTr("Categories"); checkable: true; checked: win.categoriesVisible; onTriggered: win.categoriesVisible = checked }
-            Action { text: qsTr("Download progress"); enabled: !!win.selected; onTriggered: win.openTransfer() }
+        IdmMenu { appWindow: win; id: viewMenu; title: qsTr("View")
+            Action { objectName: "advancedColumnsAction"; text: qsTr("More columns"); checkable: true; checked: win.showDetailsColumns; onTriggered: win.showDetailsColumns = checked }
+            Action { text: qsTr("Categories"); icon.source: win.iconSource("folder", win.muted); checkable: true; checked: win.categoriesVisible; onTriggered: win.categoriesVisible = checked }
+            Action { text: qsTr("Download progress"); icon.source: win.iconSource("download", win.muted); enabled: !!win.selected; onTriggered: win.openTransfer() }
         }
-        Menu { title: qsTr("Help")
-            Action { text: qsTr("Keyboard shortcuts"); onTriggered: shortcutsDialog.open() }
-            Action { text: qsTr("Browser integration"); onTriggered: { optionsTabs.currentIndex = 6; optionsDialog.open() } }
-            Action { text: qsTr("About"); onTriggered: aboutDialog.open() }
+        IdmMenu { appWindow: win; id: helpMenu; title: qsTr("Help")
+            IdmMenuItem { appWindow: win; shortcutHint: "F1"; text: qsTr("Keyboard shortcuts"); icon.source: win.iconSource("file", win.muted); onTriggered: shortcutsDialog.open() }
+            Action { text: qsTr("Browser integration"); icon.source: win.iconSource("download", win.muted); onTriggered: { optionsTabs.currentIndex = 6; optionsDialog.open() } }
+            Action { text: qsTr("About"); icon.source: win.iconSource("file", win.muted); onTriggered: aboutDialog.open() }
         }
     }
     RowLayout {
@@ -449,45 +497,61 @@ ApplicationWindow {
             color: win.panel
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: win.edge }
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 16; spacing: 18
+                anchors.fill: parent; anchors.margins: 16; spacing: 28
                 RowLayout {
-                    Layout.fillWidth: true; Layout.topMargin: 10; spacing: 10
+                    Layout.fillWidth: true; Layout.topMargin: 4; spacing: 9
                     Rectangle {
                         width: 30; height: 30; color: win.accent; radius: win.controlRadius
-                        AppIcon { kind: "download"; tint: "#fffaf5"; anchors.centerIn: parent; width: 18; height: 18 }
+                        AppIcon { kind: "download"; tint: "#1a1008"; anchors.centerIn: parent; width: 20; height: 20 }
                     }
                     Column {
                         spacing: 1
-                        Text { text: "IDM Native"; font.pixelSize: 17; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink }
-                        Text { text: "OMARCHY"; font.family: win.mono; font.pixelSize: 9; font.letterSpacing: 1.5; color: win.muted }
+                        Text { text: "IDM Native"; font.family: win.displayFont; font.pixelSize: 17; font.weight: Font.Medium; font.letterSpacing: -.4; color: win.ink }
                     }
                 }
-                Label { text: qsTr("Categories"); font.family: win.mono; font.pixelSize: 10; font.letterSpacing: .7; color: win.muted; Layout.topMargin: 18 }
                 ScrollView {
                     id: navigationScroll
                     Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
                     Column {
-                        width: navigationScroll.availableWidth; spacing: 3
+                        width: navigationScroll.availableWidth; spacing: 2
                         Repeater {
                             model: [{key:"all",label:qsTr("All Downloads"),depth:0,icon:"download"},
+                                {key:"unfinished",label:qsTr("Unfinished"),depth:0,icon:"stop"},{key:"finished",label:qsTr("Finished"),depth:0,icon:"completed"},
+                                {key:"types",label:qsTr("File types"),depth:0,icon:"chevron",section:true},
                                 {key:"Compressed",label:qsTr("Compressed"),depth:1,icon:"folder"},{key:"Documents",label:qsTr("Documents"),depth:1,icon:"file"},
                                 {key:"Music",label:qsTr("Music"),depth:1,icon:"music"},{key:"Programs",label:qsTr("Programs"),depth:1,icon:"file"},{key:"Video",label:qsTr("Video"),depth:1,icon:"video"},{key:"Other",label:qsTr("Other"),depth:1,icon:"folder"},
-                                {key:"unfinished",label:qsTr("Unfinished"),depth:0,icon:"stop"},{key:"finished",label:qsTr("Finished"),depth:0,icon:"completed"},
                                 {key:"queues",label:qsTr("Queues"),depth:0,icon:"queue"}].concat((win.automationAvailable ? automation.queues : [{name:"Main download queue"}]).map(q => ({key:"queue:"+q.name,label:q.name === "Main download queue" ? qsTr("Main download queue") : q.name,depth:1,icon:"queue"})))
                             delegate: Rectangle {
                                 id: navItem
+                                objectName: "navigation-" + modelData.key
                                 required property var modelData
                                 readonly property bool selected: win.filter === modelData.key
+                                readonly property bool section: !!modelData.section
+                                function activate() {
+                                    if (section) win.filesExpanded = !win.filesExpanded
+                                    else if (modelData.key === "queues") win.queuesExpanded = !win.queuesExpanded
+                                    else win.filter = modelData.key
+                                }
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: modelData.label
+                                Accessible.onPressAction: activate()
+                                Keys.onShortcutOverride: event => { if ([Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space].includes(event.key)) event.accepted = true }
+                                Keys.onReturnPressed: activate()
+                                Keys.onEnterPressed: activate()
+                                Keys.onSpacePressed: activate()
                                 visible: modelData.depth === 0 || (modelData.key.startsWith("queue:") ? win.queuesExpanded : win.filesExpanded)
-                                width: parent.width; height: visible ? 33 : 0
+                                width: parent.width; height: visible ? 38 : 0
                                 color: selected ? win.selection : navMouse.containsMouse ? win.hoverSurface : "transparent"
                                 radius: win.controlRadius
+                                border.color: activeFocus ? theme.accent : "transparent"
                                 Rectangle { visible: navItem.selected; width: 2; height: 17; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; color: win.accent }
                                 RowLayout {
-                                    anchors.fill: parent; anchors.leftMargin: 10+navItem.modelData.depth*8; anchors.rightMargin: 10; spacing: 9
-                                    AppIcon { kind: navItem.modelData.icon; Layout.preferredWidth: 16; Layout.preferredHeight: 16; tint: navItem.selected ? win.accent : win.muted }
-                                    Text { text: navItem.modelData.label; font.pixelSize: 12; font.weight: navItem.selected ? Font.Medium : Font.Normal; color: navItem.selected ? win.ink : win.muted; elide: Text.ElideRight; Layout.fillWidth: true }
-                                    Text { text: win.navigationCount(navItem.modelData.key); font.family: win.mono; font.pixelSize: 10; color: navItem.selected ? win.ink : win.muted; visible: text !== "" }
+                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 9
+                                    AppIcon { visible: !navItem.section; kind: navItem.modelData.icon; Layout.preferredWidth: 15; Layout.preferredHeight: 15; tint: navItem.selected ? win.accent : win.muted }
+                                    Text { text: navItem.modelData.label; font.pixelSize: 12; font.weight: navItem.selected || navItem.section ? Font.Medium : Font.Normal; color: navItem.selected ? win.ink : win.muted; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Text { text: navItem.section ? "" : win.navigationCount(navItem.modelData.key); font.family: win.mono; font.pixelSize: 10; color: navItem.selected ? win.ink : win.muted; visible: text !== "" && text !== "0" }
+                                    AppIcon { visible: navItem.section || navItem.modelData.key === "queues"; kind: "chevron"; Layout.preferredWidth: 11; Layout.preferredHeight: 11; tint: win.muted; rotation: (navItem.section ? win.filesExpanded : win.queuesExpanded) ? 90 : 0 }
                                 }
                                 ToolTip.visible: navMouse.containsMouse && navItem.modelData.key.startsWith("queue:")
                                 ToolTip.text: navItem.modelData.label
@@ -495,11 +559,12 @@ ApplicationWindow {
                                     id: navMouse
                                     anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; hoverEnabled: true
                                     onClicked: mouse => {
-                                        win.filter = navItem.modelData.key === "queues" ? "queue:Main download queue" : navItem.modelData.key
+                                        if (mouse.button === Qt.LeftButton) navItem.activate()
                                         if (mouse.button === Qt.RightButton && navItem.modelData.key.startsWith("queue:")) {
-                                            queueMenu.queue = navItem.modelData.key.slice(6); queueMenu.popup()
-                                        } else if (mouse.x < 20 && navItem.modelData.key === "all") win.filesExpanded = !win.filesExpanded
-                                        else if (mouse.x < 20 && navItem.modelData.key === "queues") win.queuesExpanded = !win.queuesExpanded
+                                            queueMenu.queue = navItem.modelData.key.slice(6)
+                                            let point = navItem.mapToItem(win.contentItem, mouse.x, mouse.y)
+                                            queueMenu.popup(win.contentItem, point.x, point.y)
+                                        }
                                     }
                                 }
                             }
@@ -522,50 +587,42 @@ ApplicationWindow {
         ColumnLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
             Item {
-                Layout.fillWidth: true; Layout.preferredHeight: 106
-                ColumnLayout {
-                    anchors.left: parent.left; anchors.leftMargin: 26; anchors.verticalCenter: parent.verticalCenter
-                    width: Math.max(100,parent.width-210); spacing: 6
-                    Label {
-                        text: win.filter === "all" ? qsTr("Downloads") : win.filter.startsWith("queue:") ? win.filter.slice(6) : win.filter === "unfinished" ? qsTr("Unfinished") : win.filter === "finished" ? qsTr("Finished") : qsTr(win.filter)
-                        font.pixelSize: 27; font.weight: Font.DemiBold; font.letterSpacing: -.8; color: win.ink
-                        Layout.fillWidth: true; elide: Text.ElideRight
-                    }
-                    Label { text: qsTr("%1 active · %2 queued").arg(backend.downloads.filter(d => win.running(d)).length).arg(backend.downloads.filter(d => d.status === "paused").length); font.pixelSize: 12; color: win.muted }
-                }
-                AppButton {
-                    objectName: "addDownloadButton"; primary: true; text: qsTr("+  Add URL"); implicitHeight: 36; implicitWidth: 126
-                    anchors.right: parent.right; anchors.rightMargin: 26; anchors.verticalCenter: parent.verticalCenter
-                    onClicked: win.newDownload()
-                }
-            }
-            Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 49; color: win.canvas
-                Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: win.edge }
-                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.edge }
+                Layout.fillWidth: true; Layout.preferredHeight: 88
                 RowLayout {
                     objectName: "downloadToolbar"
-                    anchors.fill: parent; anchors.leftMargin: 26; anchors.rightMargin: 26; spacing: 2
-                    Tool { objectName: "resumeButton"; text: qsTr("Resume"); kind: "resume"; enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onClicked: win.controller.resume(win.selectedId) }
-                    Tool { text: qsTr("Stop"); kind: "stop"; enabled: win.running(win.selected); onClicked: win.controller.pause(win.selectedId) }
-                    Tool { text: qsTr("Delete"); kind: "delete"; enabled: !!win.selected; onClicked: win.deleteSelected() }
-                    Rectangle { Layout.leftMargin: 6; Layout.rightMargin: 6; width: 1; height: 18; color: win.edge }
-                    Tool { objectName: "startQueueButton"; text: qsTr("Start Queue"); kind: "queue"; onClicked: win.startQueue() }
-                    Item { Layout.fillWidth: true }
+                    anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 5
+                        Label {
+                            text: win.filter === "all" ? qsTr("Downloads") : win.filter.startsWith("queue:") ? win.filter.slice(6) : win.filter === "unfinished" ? qsTr("Unfinished") : win.filter === "finished" ? qsTr("Finished") : qsTr(win.filter)
+                            font.pixelSize: 24; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink
+                            Layout.fillWidth: true; elide: Text.ElideRight
+                        }
+                        Label {
+                            readonly property int activeCount: backend.downloads.filter(d => win.running(d)).length
+                            visible: activeCount > 0
+                            text: qsTr("%1 active").arg(activeCount); font.pixelSize: 12; color: win.muted
+                        }
+                    }
+                    Tool { objectName: "resumeButton"; text: qsTr("Resume"); kind: "resume"; visible: !!win.selected; enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onClicked: win.controller.resume(win.selectedId) }
+                    Tool { text: qsTr("Pause"); kind: "stop"; visible: !!win.selected; enabled: win.running(win.selected); onClicked: win.controller.pause(win.selectedId) }
+                    Tool { text: qsTr("Delete"); kind: "delete"; visible: !!win.selected; onClicked: win.deleteSelected() }
+                    Tool { objectName: "selectionDetailsButton"; text: qsTr("Details"); kind: "info"; visible: !!win.selected; onClicked: win.openTransfer() }
+                    Tool { objectName: "startQueueButton"; text: qsTr("Start Queue"); kind: "queue"; visible: win.filter.startsWith("queue:"); onClicked: win.startQueue() }
+                    AppButton { objectName: "addDownloadButton"; primary: true; text: qsTr("Add download"); implicitHeight: 36; implicitWidth: Math.max(132, contentItem.implicitWidth+28); onClicked: win.newDownload() }
                     Tool {
-                        id: moreButton
-                        objectName: "moreActionsButton"
-                        text: qsTr("More"); kind: "chevron"
+                        id: moreButton; objectName: "moreActionsButton"
+                        text: qsTr("More"); kind: "more"
                         onClicked: moreActions.popup(moreButton, 0, moreButton.height)
-                        Menu {
-                            id: moreActions
-                            objectName: "moreActionsMenu"
-                            MenuItem { text: qsTr("Options"); onTriggered: optionsDialog.open() }
-                            MenuItem { text: qsTr("Stop All"); onTriggered: win.controller.pauseAll() }
-                            MenuItem { objectName: "deleteCompletedButton"; text: qsTr("Delete Completed"); onTriggered: win.controller.removeCompleted() }
-                            MenuSeparator {}
-                            MenuItem { text: qsTr("Stop Queue"); onTriggered: win.stopQueue() }
-                            MenuItem { text: qsTr("Scheduler"); enabled: win.automationAvailable; onTriggered: schedulerDialog.open() }
+                        IdmMenu { appWindow: win;
+                            id: moreActions; objectName: "moreActionsMenu"
+                            IdmMenuItem { appWindow: win; text: qsTr("Preferences"); icon.source: win.iconSource("options", win.muted); onTriggered: optionsDialog.open() }
+                            IdmMenuItem { appWindow: win; text: qsTr("Stop All"); icon.source: win.iconSource("stopall", win.muted); onTriggered: win.controller.pauseAll() }
+                            IdmMenuItem { appWindow: win; objectName: "deleteCompletedButton"; text: qsTr("Delete Completed"); icon.source: win.iconSource("completed", win.muted); onTriggered: win.controller.removeCompleted() }
+                            IdmMenuSeparator { appWindow: win; }
+                            IdmMenuItem { appWindow: win; text: qsTr("Start Queue"); icon.source: win.iconSource("queue", win.muted); onTriggered: win.startQueue() }
+                            IdmMenuItem { appWindow: win; text: qsTr("Stop Queue"); icon.source: win.iconSource("queueStop", win.muted); onTriggered: win.stopQueue() }
+                            IdmMenuItem { appWindow: win; text: qsTr("Scheduler"); icon.source: win.iconSource("queue", win.muted); enabled: win.automationAvailable; onTriggered: schedulerDialog.open() }
                         }
                     }
                 }
@@ -576,28 +633,28 @@ ApplicationWindow {
                     id: tableScroll; objectName: "tableScroll"
                     anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14
                     clip: true; contentWidth: Math.max(width,win.columns.reduce((n,c) => n+c.width,0)); contentHeight: height; flickableDirection: Flickable.HorizontalFlick
-                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.horizontal: IdmScrollBar { appWindow: win; policy: ScrollBar.AsNeeded }
                     Column {
                         width: tableScroll.contentWidth; height: tableScroll.height
                         Row {
-                            height: 38
+                            height: 34
                             Repeater { model: win.columns
                                 delegate: Rectangle {
                                     required property var modelData
-                                    width: modelData.width; height: 38; color: headerMouse.containsMouse ? win.hoverSurface : win.canvas
+                                    width: modelData.width; height: 34; color: headerMouse.containsMouse ? win.hoverSurface : win.canvas
                                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.edge }
-                                    Text { color: win.muted; anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; verticalAlignment: Text.AlignVCenter; font.pixelSize: 11; font.weight: Font.Medium; text: modelData.label + (win.sortKey === modelData.key ? (win.descending ? "  ↓" : "  ↑") : "") }
+                                    Text { color: win.muted; anchors.fill: parent; anchors.leftMargin: modelData.key === "name" ? 46 : 12; anchors.rightMargin: 12; verticalAlignment: Text.AlignVCenter; horizontalAlignment: ["total","eta","speed"].includes(modelData.key) ? Text.AlignRight : Text.AlignLeft; font.pixelSize: 11; font.weight: Font.Medium; text: modelData.label + (win.sortKey === modelData.key ? (win.descending ? "  ↓" : "  ↑") : "") }
                                     MouseArea { id: headerMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { win.descending = win.sortKey === modelData.key ? !win.descending : false; win.sortKey = modelData.key } }
                                 }
                             }
                         }
                         ListView {
                             id: rows; objectName: "downloadTable"
-                            width: parent.width; height: Math.max(0,parent.height-52); clip: true
+                            width: parent.width; height: Math.max(0,parent.height-46); clip: true
                             model: win.shown
-                            ScrollBar.vertical: ScrollBar {
+                            ScrollBar.vertical: IdmScrollBar { appWindow: win;
                                 parent: tableScroll.parent
-                                anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 38
+                                anchors.right: parent.right; anchors.top: parent.top; anchors.topMargin: 34
                                 anchors.bottom: parent.bottom; anchors.bottomMargin: 14
                                 policy: ScrollBar.AsNeeded
                             }
@@ -615,14 +672,18 @@ ApplicationWindow {
                                             required property var modelData
                                             readonly property bool numeric: ["total","eta","speed"].includes(modelData.key)
                                             width: modelData.width; height: win.rowHeight
-                                            AppIcon { visible: modelData.key === "name"; kind: row.modelData.category === "Video" ? "video" : "file"; tint: win.muted; width: 17; height: 17; x: 12; anchors.verticalCenter: parent.verticalCenter }
+                                            AppIcon {
+                                                visible: modelData.key === "name"; x: 14; width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter
+                                                kind: row.modelData.category === "Video" ? "video" : row.modelData.category === "Music" ? "music" : "file"
+                                                tint: win.selectedId === row.modelData.id ? win.accent : win.muted
+                                            }
                                             Text {
                                                 id: cellLabel
-                                                x: modelData.key === "name" ? 39 : 12; width: parent.width-x-12; height: parent.height
+                                                x: modelData.key === "name" ? 46 : 12; width: parent.width-x-12; height: parent.height
                                                 text: win.cell(row.modelData,modelData.key); elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
                                                 horizontalAlignment: parent.numeric ? Text.AlignRight : Text.AlignLeft
                                                 font.family: parent.numeric ? win.mono : win.font.family
-                                                font.pixelSize: parent.numeric || modelData.key === "created" ? 11 : 13
+                                                font.pixelSize: parent.numeric || modelData.key === "created" ? 12 : 13
                                                 font.weight: modelData.key === "name" ? Font.Medium : Font.Normal
                                                 color: row.modelData.status === "error" ? win.danger : modelData.key === "status" && row.modelData.status === "complete" ? win.positive : modelData.key === "status" && win.running(row.modelData) ? win.accent : modelData.key === "name" ? win.ink : win.muted
                                                 ToolTip {
@@ -633,8 +694,8 @@ ApplicationWindow {
                                             }
                                             Rectangle {
                                                 visible: modelData.key === "status" && win.running(row.modelData) && row.modelData.total > 0
-                                                x: 12; y: parent.height-8; width: parent.width-24; height: 2; color: win.edge
-                                                Rectangle { width: parent.width*Math.min(1,row.modelData.received/Math.max(1,row.modelData.total)); height: 2; color: win.accent }
+                                                x: 12; y: parent.height-13; width: parent.width-24; height: 3; radius: 1.5; color: win.edge
+                                                Rectangle { width: parent.width*Math.min(1,row.modelData.received/Math.max(1,row.modelData.total)); height: parent.height; radius: 1.5; color: win.accent }
                                             }
                                         }
                                     }
@@ -642,7 +703,13 @@ ApplicationWindow {
                                 MouseArea {
                                     id: rowMouse; hoverEnabled: true
                                     anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                    onClicked: mouse => { win.selectedId = row.modelData.id; if (mouse.button === Qt.RightButton) rowMenu.popup() }
+                                    onClicked: mouse => {
+                                        win.selectedId = row.modelData.id
+                                        if (mouse.button === Qt.RightButton) {
+                                            let point = row.mapToItem(win.contentItem, mouse.x, mouse.y)
+                                            rowMenu.popup(win.contentItem, point.x, point.y)
+                                        }
+                                    }
                                     onDoubleClicked: { win.selectedId = row.modelData.id; win.openTransfer() }
                                 }
                             }
@@ -652,27 +719,24 @@ ApplicationWindow {
                 Column {
                     objectName: "emptyState"
                     visible: win.shown.length === 0
-                    width: Math.min(360,parent.width-48); anchors.centerIn: parent; spacing: 14
+                    width: Math.min(320,parent.width-48); anchors.centerIn: parent; spacing: 14
                     Rectangle {
-                        width: 54; height: 54; color: win.panel; border.color: win.edge; radius: win.controlRadius
+                        width: 42; height: 42; color: "transparent"; radius: win.controlRadius
                         anchors.horizontalCenter: parent.horizontalCenter
                         AppIcon { kind: "download"; tint: win.muted; width: 24; height: 24; anchors.centerIn: parent }
                     }
-                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: backend.downloads.length ? qsTr("Nothing in this view") : qsTr("Your next download starts here"); font.pixelSize: 19; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink; wrapMode: Text.WordWrap }
-                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Add a URL, drop a link, or send a file from your browser."); font.pixelSize: 12; color: win.muted; wrapMode: Text.WordWrap; lineHeight: 1.4 }
-                    Row { anchors.horizontalCenter: parent.horizontalCenter; spacing: 6
-                        Text { text: "Ctrl"; font.family: win.mono; font.pixelSize: 10; color: win.muted }
-                        Text { text: "+ N"; font.family: win.mono; font.pixelSize: 10; color: win.muted }
-                    }
+                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: backend.downloads.length ? qsTr("Nothing in this view") : qsTr("No downloads yet"); font.pixelSize: 18; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink; wrapMode: Text.WordWrap }
+                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Add a link or send one from your browser."); font.pixelSize: 12; color: win.muted; wrapMode: Text.WordWrap; lineHeight: 1.4 }
+
                 }
             }
             Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 32; color: win.canvas
+                visible: !!win.currentError
+                Layout.fillWidth: true; Layout.preferredHeight: 30; color: win.canvas
                 Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: win.edge }
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 26; anchors.rightMargin: 26; spacing: 10
-                    Label { text: win.currentError || qsTr("%1 downloads").arg(backend.downloads.length); elide: Text.ElideRight; Layout.fillWidth: true; color: win.currentError ? win.danger : win.muted; font.pixelSize: 11 }
-                    Label { text: qsTr("Ctrl+N to add a download"); font.family: win.mono; font.pixelSize: 9; color: win.muted; visible: !win.currentError }
+                    Label { text: win.currentError; elide: Text.ElideRight; Layout.fillWidth: true; color: win.currentError ? win.danger : win.muted; font.pixelSize: 11 }
                 }
             }
         }
@@ -686,87 +750,137 @@ ApplicationWindow {
             else if (drop.hasText) win.acceptDroppedUrls(drop.text.split(/\s+/))
         }
     }
-    Menu {
-        id: queueMenu
+    IdmMenu { appWindow: win;
+        id: queueMenu; objectName: "queueContextMenu"
         property string queue: "Main download queue"
-        Action { text: qsTr("Start Queue"); enabled: win.automationAvailable; onTriggered: automation.startQueue(queueMenu.queue) }
-        Action { text: qsTr("Stop Queue"); enabled: win.automationAvailable; onTriggered: automation.stopQueue(queueMenu.queue) }
-        Action { text: qsTr("Scheduler"); enabled: win.automationAvailable; onTriggered: { queueName.editText=queueMenu.queue; schedulerDialog.open(); win.loadQueue() } }
+        Action { text: qsTr("Start Queue"); icon.source: win.iconSource("queue", win.muted); enabled: win.automationAvailable; onTriggered: automation.startQueue(queueMenu.queue) }
+        Action { text: qsTr("Stop Queue"); icon.source: win.iconSource("queueStop", win.muted); enabled: win.automationAvailable; onTriggered: automation.stopQueue(queueMenu.queue) }
+        Action { text: qsTr("Scheduler"); icon.source: win.iconSource("queue", win.muted); enabled: win.automationAvailable; onTriggered: { queueName.editText=queueMenu.queue; schedulerDialog.open(); win.loadQueue() } }
     }
-    Menu {
-        id: rowMenu
-        Action { text: qsTr("Download progress"); onTriggered: win.openTransfer() }
-        Action { text: qsTr("Resume"); enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onTriggered: win.controller.resume(win.selectedId) }
-        Action { text: qsTr("Stop"); enabled: win.running(win.selected); onTriggered: win.controller.pause(win.selectedId) }
-        MenuSeparator {}
-        Action { text: qsTr("Open containing folder"); enabled: !!win.selected; onTriggered: Qt.openUrlExternally("file://"+win.selected.path.substring(0,win.selected.path.lastIndexOf("/"))) }
-        Action { text: qsTr("Refresh download address"); enabled: !!win.selected && win.automationAvailable; onTriggered: { editDialog.renaming=false; editDialog.open() } }
-        Action { text: qsTr("Rename file"); enabled: !!win.selected && win.automationAvailable; onTriggered: { editDialog.renaming=true; editDialog.open() } }
-        Action { text: qsTr("Queue and priority"); enabled: !!win.selected && win.automationAvailable; onTriggered: policyDialog.open() }
-        Action { text: qsTr("Delete"); enabled: !!win.selected; onTriggered: win.deleteSelected() }
+    IdmMenu { appWindow: win;
+        id: rowMenu; objectName: "rowContextMenu"
+        Action { text: qsTr("Download progress"); icon.source: win.iconSource("download", win.muted); onTriggered: win.openTransfer() }
+        Action { text: qsTr("Resume"); icon.source: win.iconSource("resume", win.muted); enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onTriggered: win.controller.resume(win.selectedId) }
+        Action { text: qsTr("Stop"); icon.source: win.iconSource("stop", win.muted); enabled: win.running(win.selected); onTriggered: win.controller.pause(win.selectedId) }
+        IdmMenuSeparator { appWindow: win; }
+        Action { text: qsTr("Open containing folder"); icon.source: win.iconSource("folder", win.muted); enabled: !!win.selected; onTriggered: Qt.openUrlExternally("file://"+win.selected.path.substring(0,win.selected.path.lastIndexOf("/"))) }
+        Action { text: qsTr("Refresh download address"); icon.source: win.iconSource("download", win.muted); enabled: !!win.selected && win.automationAvailable; onTriggered: { editDialog.renaming=false; editDialog.open() } }
+        Action { text: qsTr("Rename file"); icon.source: win.iconSource("file", win.muted); enabled: !!win.selected && win.automationAvailable; onTriggered: { editDialog.renaming=true; editDialog.open() } }
+        Action { text: qsTr("Queue and priority"); icon.source: win.iconSource("queue", win.muted); enabled: !!win.selected && win.automationAvailable; onTriggered: policyDialog.open() }
+        IdmMenuSeparator { appWindow: win; }
+        Action { text: qsTr("Delete"); icon.source: win.iconSource("delete", win.muted); enabled: !!win.selected; onTriggered: win.deleteSelected() }
     }
     NativeDialog {
         id: urlDialog; objectName: "urlDialog"
-        title: qsTr("Enter new URL to download"); onRejected: win.droppedUrls = []; modal: true; width: 570; anchors.centerIn: parent
-        onOpened: { urlInput.forceActiveFocus(); urlInput.selectAll() }
+        title: qsTr("Add download"); onRejected: win.droppedUrls = []
+        modal: true; width: 550; height: Math.min(urlOptions.checked ? 430 : 248, win.contentItem.height-24); anchors.centerIn: parent
+        onOpened: {
+            urlOptions.checked = useAuthorization.checked || mediaInput.checked
+            urlInput.forceActiveFocus(); urlInput.selectAll()
+        }
         ColumnLayout {
-            anchors.fill: parent; spacing: 10
-            RowLayout { Layout.fillWidth: true
-                Label { text: qsTr("Address"); Layout.preferredWidth: 62 }
-                AppField { id: urlInput; objectName: "urlInput"; Layout.fillWidth: true; placeholderText: "https://"; onAccepted: win.prepareInformation() }
+            anchors.fill: parent; spacing: 12
+            ScrollView {
+                id: urlScroll
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                ColumnLayout {
+                    width: urlScroll.availableWidth; spacing: 8
+                    Label { text: qsTr("Address"); font.pixelSize: 11; color: win.muted }
+                    AppField { id: urlInput; objectName: "urlInput"; Layout.fillWidth: true; placeholderText: "https://"; onAccepted: win.prepareInformation() }
+                    Label { visible: win.droppedUrls.length > 0; text: qsTr("%1 more links will be confirmed next.").arg(win.droppedUrls.length); font.pixelSize: 12; color: win.muted }
+                    FormDisclosure { id: urlOptions; objectName: "urlOptionsDisclosure"; text: qsTr("Download options"); Layout.fillWidth: true; Layout.topMargin: 12 }
+                    ColumnLayout {
+                        visible: urlOptions.checked; Layout.fillWidth: true; spacing: 12
+                        AppCheckBox {
+                            id: mediaInput; objectName: "mediaInput"; text: qsTr("Video or audio")
+                            onCheckedChanged: if (checked) urlOptions.checked = true
+                        }
+                        AppCheckBox {
+                            id: useAuthorization; objectName: "useAuthorization"; text: qsTr("Use authorization")
+                            onCheckedChanged: if (checked) urlOptions.checked = true
+                        }
+                        GridLayout {
+                            visible: useAuthorization.checked; columns: 2; columnSpacing: 12; rowSpacing: 8; Layout.fillWidth: true
+                            Label { text: qsTr("Login"); font.pixelSize: 11; color: win.muted }
+                            Label { text: qsTr("Password"); font.pixelSize: 11; color: win.muted }
+                            AppField { id: loginInput; objectName: "loginInput"; maximumLength: 512; Layout.fillWidth: true }
+                            AppField { id: passwordInput; objectName: "passwordInput"; maximumLength: 4096; echoMode: TextInput.Password; Layout.fillWidth: true }
+                        }
+                    }
+                }
             }
-            AppCheckBox { id: useAuthorization; objectName: "useAuthorization"; text: qsTr("Use authorization") }
-            RowLayout {
-                enabled: useAuthorization.checked; Layout.fillWidth: true
-                Label { text: qsTr("Login") }
-                AppField { id: loginInput; objectName: "loginInput"; maximumLength: 512; Layout.fillWidth: true }
-                Label { text: qsTr("Password") }
-                AppField { id: passwordInput; objectName: "passwordInput"; maximumLength: 4096; echoMode: TextInput.Password; Layout.fillWidth: true }
-            }
-            Label { visible: win.droppedUrls.length > 0; text: qsTr("%1 more links will be confirmed next.").arg(win.droppedUrls.length); color: win.ink }
-            AppCheckBox { id: mediaInput; objectName: "mediaInput"; text: qsTr("Download video / audio stream (HLS, DASH or video page)") }
-            RowLayout { Layout.alignment: Qt.AlignRight
-                AppButton { primary: true; text: qsTr("OK"); enabled: urlInput.text.trim().length > 0; onClicked: win.prepareInformation() }
+            RowLayout { Layout.alignment: Qt.AlignRight; spacing: 8
                 AppButton { text: qsTr("Cancel"); onClicked: { win.droppedUrls = []; urlDialog.close() } }
+                AppButton { primary: true; text: qsTr("Continue"); enabled: urlInput.text.trim().length > 0; onClicked: win.prepareInformation() }
             }
         }
     }
+    component FormDisclosure: Button {
+        id: disclosure
+        checkable: true; hoverEnabled: true; implicitHeight: 34; leftPadding: 0; rightPadding: 0
+        contentItem: RowLayout {
+            spacing: 8
+            AppIcon { kind: "chevron"; tint: win.muted; rotation: disclosure.checked ? 90 : 0; Layout.preferredWidth: 12; Layout.preferredHeight: 12 }
+            Text { text: disclosure.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; Layout.fillWidth: true; elide: Text.ElideRight }
+        }
+        background: Rectangle { color: disclosure.hovered ? win.hoverSurface : "transparent"; radius: 5; border.color: disclosure.activeFocus ? theme.accent : "transparent" }
+    }
     NativeDialog {
         id: infoDialog; objectName: "infoDialog"
+        onOpened: infoOptions.checked = infoMedia.checked || useRequestHeaders.checked
         onClosed: { requestHeadersInput.clear(); useRequestHeaders.checked=false }
-        title: qsTr("Download File Info"); onRejected: win.droppedUrls = []; modal: true; width: 650; anchors.centerIn: parent
+        title: qsTr("Save download"); onRejected: win.droppedUrls = []
+        modal: true; width: 600; height: Math.min(infoOptions.checked ? 590 : 360, win.contentItem.height-24); anchors.centerIn: parent
         ColumnLayout {
-            anchors.fill: parent; spacing: 9
-            GridLayout {
-                columns: 2; columnSpacing: 10; rowSpacing: 8; Layout.fillWidth: true
-                Label { text: qsTr("URL") }
-                AppField { id: addressInput; objectName: "addressInput"; Layout.fillWidth: true }
-                Label { text: qsTr("Save as") }
-                AppField { id: filenameInput; objectName: "filenameInput"; Layout.fillWidth: true }
-                Label { text: qsTr("Save to") }
-                RowLayout { Layout.fillWidth: true
-                    AppField { id: directoryInput; objectName: "directoryInput"; Layout.fillWidth: true }
-                    AppButton { text: qsTr("Browse..."); onClicked: picker.open() }
-                }
-                Label { text: qsTr("Description") }
-                AppField { id: descriptionInput; objectName: "descriptionInput"; Layout.fillWidth: true }
-                Label { text: qsTr("Connections") }
-                SpinBox { id: connections; from: 1; to: 16; value: 4; editable: true; implicitHeight: 28 }
-            }
-            AppCheckBox { id: useRequestHeaders; objectName: "useRequestHeaders"; text: qsTr("Additional HTTP headers") }
+            anchors.fill: parent; spacing: 12
             ScrollView {
-                visible: useRequestHeaders.checked; Layout.fillWidth: true; Layout.preferredHeight: 82
-                TextArea { id: requestHeadersInput; objectName: "requestHeadersInput"; selectByMouse: true; font.family: "monospace"; placeholderText: '{"X-Api-Key": "value"}' }
+                id: infoScroll; objectName: "infoScroll"
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                ColumnLayout {
+                    width: infoScroll.availableWidth; spacing: 8
+                    Label { text: win.sourceHost({url:addressInput.text}); font.pixelSize: 12; color: win.muted; elide: Text.ElideRight; Layout.fillWidth: true; Layout.bottomMargin: 12 }
+                    Label { text: qsTr("File name"); font.pixelSize: 11; color: win.muted }
+                    AppField { id: filenameInput; objectName: "filenameInput"; Layout.fillWidth: true }
+                    Label { text: qsTr("Save to"); font.pixelSize: 11; color: win.muted; Layout.topMargin: 8 }
+                    RowLayout { Layout.fillWidth: true; spacing: 8
+                        AppField { id: directoryInput; objectName: "directoryInput"; Layout.fillWidth: true }
+                        AppButton { text: qsTr("Browse..."); onClicked: picker.open() }
+                    }
+                    FormDisclosure { id: infoOptions; objectName: "infoOptionsDisclosure"; text: qsTr("Download options"); Layout.fillWidth: true; Layout.topMargin: 12 }
+                    ColumnLayout {
+                        visible: infoOptions.checked; Layout.fillWidth: true; spacing: 12
+                        AppCheckBox {
+                            id: infoMedia; objectName: "infoMedia"; text: qsTr("Video or audio")
+                            onCheckedChanged: if (checked) infoOptions.checked = true
+                        }
+                        IdmComboBox { appWindow: win; id: mediaFormat; objectName: "mediaFormat"; visible: infoMedia.checked; Layout.fillWidth: true; model: [qsTr("Best quality"),"1080p","720p",qsTr("Audio only")] }
+                        Label { visible: infoMedia.checked; text: qsTr("Requires yt-dlp and ffmpeg. Protected streams are not supported."); font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: win.muted }
+                        GridLayout {
+                            columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true; Layout.topMargin: 8
+                            Label { text: qsTr("URL"); font.pixelSize: 11; color: win.muted }
+                            AppField { id: addressInput; objectName: "addressInput"; Layout.fillWidth: true }
+                            Label { text: qsTr("Description"); font.pixelSize: 11; color: win.muted }
+                            AppField { id: descriptionInput; objectName: "descriptionInput"; Layout.fillWidth: true }
+                            Label { text: qsTr("Connections"); font.pixelSize: 11; color: win.muted }
+                            IdmSpinBox { appWindow: win; id: connections; from: 1; to: 16; value: 4; editable: true }
+                        }
+                        AppCheckBox {
+                            id: useRequestHeaders; objectName: "useRequestHeaders"; text: qsTr("Additional HTTP headers")
+                            onCheckedChanged: if (checked) infoOptions.checked = true
+                        }
+                        ScrollView {
+                            visible: useRequestHeaders.checked; Layout.fillWidth: true; Layout.preferredHeight: 90
+                            AppTextArea { id: requestHeadersInput; objectName: "requestHeadersInput"; selectByMouse: true; font.family: win.mono; placeholderText: '{"X-Api-Key": "value"}' }
+                        }
+                    }
+                }
             }
-            ComboBox { id: mediaFormat; objectName: "mediaFormat"; visible: infoMedia.checked; model: [qsTr("Best quality"),"1080p","720p",qsTr("Audio only")] }
-            AppCheckBox { id: infoMedia; text: qsTr("Video / audio download"); objectName: "infoMedia" }
-            Label { visible: infoMedia.checked; text: qsTr("Uses yt-dlp and ffmpeg. Protected streams are not supported."); wrapMode: Text.WordWrap; Layout.fillWidth: true; color: win.muted }
-            Label { visible: win.lastError.length > 0; text: win.lastError; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Label { visible: win.lastError.length > 0; text: win.lastError; color: win.danger; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             RowLayout {
-                Layout.alignment: Qt.AlignRight
-                AppButton { objectName: "downloadLaterButton"; text: qsTr("Download Later"); onClicked: win.submit(false) }
-                AppButton { objectName: "startDownloadButton"; text: qsTr("Start Download"); onClicked: win.submit(true) }
+                Layout.alignment: Qt.AlignRight; spacing: 8
                 AppButton { text: qsTr("Cancel"); onClicked: { win.droppedUrls = []; infoDialog.close() } }
+                AppButton { objectName: "downloadLaterButton"; text: qsTr("Later"); onClicked: win.submit(false) }
+                AppButton { objectName: "startDownloadButton"; primary: true; text: qsTr("Download"); onClicked: win.submit(true) }
             }
         }
     }
@@ -779,9 +893,9 @@ ApplicationWindow {
         id: transferDialog; objectName: "transferDialog"
         title: qsTr("Download progress")
         onClosed: if (win.running(win.transferJob)) win.controller.pause(win.transferId)
-        modal: false; width: 650; height: Math.min(implicitHeight,win.contentItem.height-12); anchors.centerIn: parent
+        modal: false; width: 650; height: Math.min(transferDetails.checked ? 550 : 345,win.contentItem.height-24); anchors.centerIn: parent
         ColumnLayout {
-            anchors.fill: parent; spacing: 6
+            anchors.fill: parent; spacing: 12
             RowLayout {
                 Layout.fillWidth: true; spacing: 12
                 AppIcon { kind: win.transferJob && win.transferJob.media ? "video" : "file"; tint: win.accent; Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
@@ -795,15 +909,15 @@ ApplicationWindow {
                 Layout.fillWidth: true; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 16
                 ColumnLayout { Layout.fillWidth: true; Layout.preferredWidth: 1; spacing: 4
                     Label { Layout.fillWidth: true; text: qsTr("Transfer rate"); font.pixelSize: 11; color: win.muted }
-                    Label { text: win.transferJob ? win.bytes(win.transferJob.speed)+"/s" : ""; font.family: win.mono; font.pixelSize: 17 }
+                    Label { text: win.transferJob ? win.bytes(win.transferJob.speed)+"/s" : ""; font.family: win.mono; font.pixelSize: 18 }
                 }
                 ColumnLayout { Layout.fillWidth: true; Layout.preferredWidth: 1; spacing: 4
                     Label { Layout.fillWidth: true; text: qsTr("Time left"); font.pixelSize: 11; color: win.muted }
-                    Label { text: win.transferJob ? win.duration(win.transferJob.eta) || "—" : "—"; font.family: win.mono; font.pixelSize: 17 }
+                    Label { text: win.transferJob ? win.duration(win.transferJob.eta) || "—" : "—"; font.family: win.mono; font.pixelSize: 18 }
                 }
                 ColumnLayout { Layout.fillWidth: true; Layout.preferredWidth: 1; spacing: 4
                     Label { Layout.fillWidth: true; text: qsTr("Downloaded"); font.pixelSize: 11; color: win.muted }
-                    Label { text: win.transferJob ? win.bytes(win.transferJob.received) : ""; font.family: win.mono; font.pixelSize: 17 }
+                    Label { text: win.transferJob ? win.bytes(win.transferJob.received) : ""; font.family: win.mono; font.pixelSize: 18 }
                 }
             }
             ProgressBar {
@@ -817,7 +931,13 @@ ApplicationWindow {
                 Label { text: win.transferJob ? win.bytes(win.transferJob.total) : ""; color: win.muted; font.pixelSize: 11; Layout.fillWidth: true }
                 Label { text: qsTr("Resume capability")+": "+(win.transferJob && win.transferJob.resumable ? qsTr("Yes") : qsTr("No")); color: win.muted; font.pixelSize: 11 }
             }
-            Label { text: qsTr("Download status"); font.weight: Font.Medium; font.pixelSize: 11; color: win.muted }
+            FormDisclosure { id: transferDetails; objectName: "transferDetailsDisclosure"; text: qsTr("Connection details"); Layout.fillWidth: true }
+            ColumnLayout {
+                visible: transferDetails.checked; objectName: "transferConnections"; Layout.fillWidth: true; Layout.fillHeight: true; spacing: 8
+                RowLayout { Layout.fillWidth: true; spacing: 12
+                    Label { text: qsTr("Source"); font.pixelSize: 11; color: win.muted }
+                    Label { text: win.transferJob ? win.sourceHost(win.transferJob) : ""; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                }
             Rectangle {
                 Layout.fillWidth: true; Layout.preferredHeight: 18; color: win.surface
                 Row {
@@ -833,11 +953,11 @@ ApplicationWindow {
                 }
             }
             Rectangle {
-                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 28; Layout.preferredHeight: 135; color: win.surface; border.color: win.edge
+                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 28; Layout.preferredHeight: 120; color: win.surface; border.color: win.edge
                 Flickable {
                     anchors.fill: parent; anchors.margins: 8
                     clip: true; contentWidth: width; contentHeight: connectionRows.implicitHeight
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: IdmScrollBar { appWindow: win; policy: ScrollBar.AsNeeded }
                     Column {
                         id: connectionRows; width: parent.width; spacing: 7
                         Row { spacing: 12
@@ -858,6 +978,7 @@ ApplicationWindow {
                     }
                 }
             }
+            }
             Label { visible: win.transferJob && win.transferJob.error.length > 0; text: win.transferJob ? win.transferJob.error : ""; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             RowLayout { Layout.alignment: Qt.AlignRight; Layout.topMargin: 8
                 AppButton { primary: true; text: win.running(win.transferJob) ? qsTr("Pause") : qsTr("Resume"); enabled: win.transferJob && win.transferJob.status !== "complete"; onClicked: { if (win.running(win.transferJob)) win.controller.pause(win.transferId); else win.controller.resume(win.transferId) } }
@@ -873,11 +994,12 @@ ApplicationWindow {
         onAccepted: { win.controller.remove(win.selectedId); win.selectedId = "" }
     }
     NativeDialog {
-        id: optionsDialog; objectName: "optionsDialog"; title: qsTr("Internet Download Manager Configuration"); modal: true; width: 750; height: Math.min(implicitHeight,win.contentItem.height-12); anchors.centerIn: parent
+        id: optionsDialog; objectName: "optionsDialog"; title: qsTr("Preferences"); modal: true; width: 750; height: Math.min(implicitHeight,win.contentItem.height-12); anchors.centerIn: parent
         onOpened: { win.lastError=""; win.loadOptions() }
+        onRejected: win.loadPreferences()
         onClosed: { siteHeaders.clear(); sitePassword.clear(); siteAgent.clear(); siteReferer.clear(); siteStatus.text="" }
         ColumnLayout {
-            anchors.fill: parent; spacing: 10
+            anchors.fill: parent; spacing: 12
             TabBar { id: optionsTabs; objectName: "optionsTabs"; Layout.fillWidth: true
                 AppTabButton { text: qsTr("General") }
                 AppTabButton { text: qsTr("Connection") }
@@ -891,28 +1013,26 @@ ApplicationWindow {
                 currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; implicitHeight: 310
                 ColumnLayout {
                     spacing: 6
-                    Label { text: qsTr("General settings"); font.bold: true }
                     AppCheckBox { id: darkCheck; objectName: "darkModeToggle"; text: qsTr("Dark mode"); onToggled: win.darkMode = checked }
-                    AppCheckBox { id: clipboardCheck; text: qsTr("Monitor clipboard for download links") }
-                    AppCheckBox { id: notificationsCheck; text: qsTr("Show completion notifications") }
-                    AppCheckBox { id: soundCheck; text: qsTr("Play a sound when a download finishes") }
+                    AppCheckBox { id: clipboardCheck; text: qsTr("Watch clipboard"); ToolTip.visible: hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Monitor clipboard for download links") }
+                    AppCheckBox { id: notificationsCheck; text: qsTr("Completion notifications") }
+                    AppCheckBox { id: soundCheck; text: qsTr("Completion sound") }
                     Item { Layout.fillHeight: true }
-                    Label { text: qsTr("Language follows your desktop's language setting. English is used when a translation is unavailable."); wrapMode: Text.WordWrap; Layout.fillWidth: true; color: win.ink }
                 }
                 ColumnLayout {
                     GridLayout {
                         columns: 2; rowSpacing: 10; Layout.fillWidth: true
-                        Label { text: qsTr("Default maximum connections") }
-                        SpinBox { id: defaultsConnections; from: 1; to: 16; editable: true }
+                        Label { text: qsTr("Connections per download"); font.pixelSize: 11; color: win.muted }
+                        IdmSpinBox { appWindow: win; id: defaultsConnections; from: 1; to: 16; editable: true }
                         Label { text: qsTr("Simultaneous downloads") }
-                        SpinBox { id: concurrentInput; objectName: "concurrentInput"; from: 1; to: 32; editable: true }
+                        IdmSpinBox { appWindow: win; id: concurrentInput; objectName: "concurrentInput"; from: 1; to: 32; editable: true }
                         Label { text: qsTr("Retries on failure") }
-                        SpinBox { id: retriesInput; from: 0; to: 20; editable: true }
+                        IdmSpinBox { appWindow: win; id: retriesInput; from: 0; to: 20; editable: true }
                         Label { text: qsTr("Retry delay (seconds)") }
-                        SpinBox { id: retryDelayInput; from: 1; to: 3600; editable: true }
-                        Label { text: qsTr("Connection timeout (seconds)") }
-                        SpinBox { id: timeoutInput; from: 1; to: 3600; editable: true }
-                        Label { text: qsTr("Speed limit (bytes/s, 0 = unlimited)") }
+                        IdmSpinBox { appWindow: win; id: retryDelayInput; from: 1; to: 3600; editable: true }
+                        Label { text: qsTr("Timeout (seconds)"); font.pixelSize: 11; color: win.muted }
+                        IdmSpinBox { appWindow: win; id: timeoutInput; from: 1; to: 3600; editable: true }
+                        Label { text: qsTr("Speed limit (bytes/s, 0 = unlimited)"); font.pixelSize: 11; color: win.muted }
                         AppField { id: rateInput; objectName: "rateInput"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly }
                         Label { text: qsTr("Proxy URL") }
                         AppField { id: proxyInput; Layout.fillWidth: true; placeholderText: "http://proxy:8080" }
@@ -920,10 +1040,9 @@ ApplicationWindow {
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
-                    Label { text: qsTr("Download file types"); font.bold: true }
                     Label { text: qsTr("File-type filter"); }
                     AppField { id: typeFilterInput; Layout.fillWidth: true; placeholderText: "ZIP PDF MP4 EXE" }
-                    Label { text: qsTr("Leave empty to allow all file types. Browser interception preferences are set in the extension."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Label { text: qsTr("Empty allows all types. Set browser interception in the extension."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
@@ -961,25 +1080,36 @@ ApplicationWindow {
                     ColumnLayout {
                     width: siteScroll.availableWidth; spacing: 8
                     GridLayout {
-                        columns: 2; Layout.fillWidth: true
-                        Label { text: qsTr("User agent") }
-                        AppField { id: siteAgent; objectName: "siteAgent"; Layout.fillWidth: true }
-                        Label { text: qsTr("Referer") }
-                        AppField { id: siteReferer; objectName: "siteReferer"; Layout.fillWidth: true }
-                        Label { text: qsTr("Save to") }
+                        columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true
+                        Label { text: qsTr("Save to"); font.pixelSize: 11; color: win.muted }
                         AppField { id: siteDirectory; Layout.fillWidth: true }
-                        Label { text: qsTr("Connections") }
-                        SpinBox { id: siteConnections; from: 1; to: 16; value: 4 }
-                        Label { text: qsTr("Proxy URL") }
+                        Label { text: qsTr("Connections"); font.pixelSize: 11; color: win.muted }
+                        IdmSpinBox { appWindow: win; id: siteConnections; from: 1; to: 16; value: 4 }
+                        Label { text: qsTr("Proxy URL"); font.pixelSize: 11; color: win.muted }
                         AppField { id: siteProxy; Layout.fillWidth: true }
-                        Label { text: qsTr("Login") }
-                        AppField { id: siteLogin; Layout.fillWidth: true; maximumLength: 512 }
-                        Label { text: qsTr("Password") }
-                        AppField { id: sitePassword; Layout.fillWidth: true; maximumLength: 4096; echoMode: TextInput.Password }
                     }
-                    Label { text: qsTr("Custom HTTP headers (JSON object)"); font.bold: true }
-                    TextArea { id: siteHeaders; objectName: "siteHeaders"; Layout.fillWidth: true; Layout.preferredHeight: 90; selectByMouse: true; font.family: "monospace"; wrapMode: TextEdit.WrapAnywhere; placeholderText: '{"X-Api-Key": "value"}' }
-                    Label { text: qsTr("User-Agent and Referer use the fields above. Other headers are preserved here."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    FormDisclosure { id: siteAuthentication; objectName: "siteAuthenticationDisclosure"; text: qsTr("Authentication"); Layout.fillWidth: true; Layout.topMargin: 12 }
+                    GridLayout {
+                        visible: siteAuthentication.checked; columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true
+                        Label { text: qsTr("Login"); font.pixelSize: 11; color: win.muted }
+                        AppField { id: siteLogin; Layout.fillWidth: true; maximumLength: 512; onTextChanged: if (text) siteAuthentication.checked = true }
+                        Label { text: qsTr("Password"); font.pixelSize: 11; color: win.muted }
+                        AppField { id: sitePassword; Layout.fillWidth: true; maximumLength: 4096; echoMode: TextInput.Password; onTextChanged: if (text) siteAuthentication.checked = true }
+                    }
+                    FormDisclosure { id: siteRequestHeaders; objectName: "siteHeadersDisclosure"; text: qsTr("Request headers"); Layout.fillWidth: true }
+                    ColumnLayout {
+                        visible: siteRequestHeaders.checked; Layout.fillWidth: true; spacing: 12
+                        GridLayout {
+                            columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true
+                            Label { text: qsTr("User agent"); font.pixelSize: 11; color: win.muted }
+                            AppField { id: siteAgent; objectName: "siteAgent"; Layout.fillWidth: true; onTextChanged: if (text) siteRequestHeaders.checked = true }
+                            Label { text: qsTr("Referer"); font.pixelSize: 11; color: win.muted }
+                            AppField { id: siteReferer; objectName: "siteReferer"; Layout.fillWidth: true; onTextChanged: if (text) siteRequestHeaders.checked = true }
+                        }
+                        Label { text: qsTr("Custom HTTP headers (JSON object)"); font.pixelSize: 11; color: win.muted }
+                        AppTextArea { id: siteHeaders; objectName: "siteHeaders"; Layout.fillWidth: true; Layout.preferredHeight: 90; selectByMouse: true; font.family: win.mono; wrapMode: TextEdit.WrapAnywhere; placeholderText: '{"X-Api-Key": "value"}'; onTextChanged: if (text.trim() && text.trim() !== "{}") siteRequestHeaders.checked = true }
+                        Label { text: qsTr("Set User-Agent and Referer above. Other headers stay in the JSON object."); font.pixelSize: 11; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
                     RowLayout {
                         AppButton { objectName: "loadSiteButton"; text: qsTr("Load site settings"); enabled: win.automationAvailable; onClicked: win.loadSiteSettings() }
                         AppButton { objectName: "saveSiteButton"; text: qsTr("Save site settings"); enabled: win.automationAvailable; onClicked: win.saveSiteSettings() }
@@ -991,23 +1121,24 @@ ApplicationWindow {
                 ColumnLayout {
                     spacing: 5
                     AppCheckBox { id: antivirusCheck; text: qsTr("Scan completed files for viruses") }
-                    RowLayout { Label { text: qsTr("Scanner program") } AppField { id: scannerProgram; Layout.fillWidth: true; placeholderText: "/usr/bin/clamdscan" } }
-                    Label { text: qsTr("Scanner arguments, one per line. Use %f for the downloaded file.") }
-                    TextArea { id: scannerArguments; Layout.fillWidth: true; Layout.preferredHeight: 65; selectByMouse: true; placeholderText: "--\n%f" }
-                    RowLayout { Label { text: qsTr("After the queue finishes") } ComboBox { id: completionChoice; model: [qsTr("Do nothing"),qsTr("Shut down computer"),qsTr("Disconnect network")] } }
-                    RowLayout { Label { text: qsTr("Confirmation delay (seconds)") } SpinBox { id: completionDelayInput; from: 10; to: 3600 } }
-                    Label { text: qsTr("Shutdown and network disconnect are opt-in. A pending action can be cancelled from the notification bar."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    RowLayout { visible: antivirusCheck.checked; Label { text: qsTr("Scanner program") } AppField { id: scannerProgram; Layout.fillWidth: true; placeholderText: "/usr/bin/clamdscan" } }
+                    Label { visible: antivirusCheck.checked; text: qsTr("Scanner arguments, one per line. %f is the downloaded file."); font.pixelSize: 11; color: win.muted }
+                    AppTextArea { visible: antivirusCheck.checked; id: scannerArguments; Layout.fillWidth: true; Layout.preferredHeight: 65; selectByMouse: true; placeholderText: "--\n%f" }
+                    RowLayout { Label { text: qsTr("After the queue finishes") } IdmComboBox { appWindow: win; id: completionChoice; model: [qsTr("Do nothing"),qsTr("Shut down computer"),qsTr("Disconnect network")] } }
+                    RowLayout { visible: completionChoice.currentIndex > 0; Label { text: qsTr("Confirmation delay (seconds)") } IdmSpinBox { appWindow: win; id: completionDelayInput; from: 10; to: 3600 } }
+                    Label { visible: completionChoice.currentIndex > 0; text: qsTr("Shutdown and network disconnect are opt-in. Cancel pending actions in the notification bar."); font.pixelSize: 11; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                 }
                 ColumnLayout {
                     Label { text: win.bridgeAvailable ? qsTr("Native browser bridge is ready.") : qsTr("Native browser bridge is not connected."); font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Label { text: qsTr("Install the native host, then load the extension in your browser. Use Download with IDM or the video panel to send downloads here."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Label { text: qsTr("Install the host, then load the extension in your browser."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     RowLayout {
-                        AppButton { text: qsTr("Install browser integration"); enabled: typeof browserBridge !== "undefined"; onClicked: { let path = browserBridge.install(); win.installMessage = path ? qsTr("Extension folder: ")+path : "" } }
+                        AppButton { objectName: "browserInstallButton"; text: qsTr("Install browser integration"); enabled: typeof browserBridge !== "undefined"; onClicked: { let path = browserBridge.install(); win.installMessage = path ? qsTr("Extension folder: ")+path : "" } }
                         AppButton { text: qsTr("Open extension folder"); enabled: typeof browserBridge !== "undefined" && browserBridge.extensionDirectory.length > 0; onClicked: Qt.openUrlExternally("file://"+browserBridge.extensionDirectory) }
                     }
                     Label { id: integrationMessage; text: win.bridgeError || win.installMessage; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Label { text: qsTr("Chromium: open Extensions, enable Developer mode, choose Load unpacked, and select the extension folder. Firefox: follow the included browser setup instructions."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Label { text: qsTr("For HLS, DASH and video pages, enable Video / audio download. yt-dlp and ffmpeg must be installed."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    FormDisclosure { id: browserSetup; objectName: "browserSetupDisclosure"; text: qsTr("Browser setup instructions"); Layout.fillWidth: true }
+                    Label { objectName: "browserSetupInstructions"; visible: browserSetup.checked; text: qsTr("Chromium: open Extensions, enable Developer mode, choose Load unpacked, and select the extension folder. Firefox: follow the included browser setup instructions."); font.pixelSize: 12; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Label { visible: browserSetup.checked; text: qsTr("Video downloads require yt-dlp and ffmpeg. Enable Video or audio when adding the URL."); font.pixelSize: 11; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -1019,29 +1150,40 @@ ApplicationWindow {
         }
     }
     NativeDialog {
-        id: schedulerDialog; objectName: "schedulerDialog"; title: qsTr("Scheduler"); modal: true; width: 650; anchors.centerIn: parent
-        onOpened: { win.lastError=""; win.loadQueue() }
+        id: schedulerDialog; objectName: "schedulerDialog"; title: qsTr("Scheduler")
+        modal: true; width: 600; height: Math.min(scheduleTiming.checked ? 490 : 320,win.contentItem.height-24); anchors.centerIn: parent
+        onOpened: { win.lastError=""; win.loadQueue(); scheduleTiming.checked = !!queueStart.text || !!queueStop.text || queueRepeat.value > 0 }
         ColumnLayout {
-            anchors.fill: parent; spacing: 10
-            GridLayout {
-                columns: 2; Layout.fillWidth: true; rowSpacing: 8
-                Label { text: qsTr("Queue") }
-                ComboBox { id: queueName; objectName: "queueName"; editable: true; Layout.fillWidth: true; model: win.automationAvailable ? automation.queues.map(q => q.name) : ["Main download queue"]; onActivated: win.loadQueue() }
-                Label { text: qsTr("Download files at the same time") }
-                SpinBox { id: queueConcurrent; objectName: "queueConcurrent"; from: 1; to: 32 }
-                Label { text: qsTr("Start date and time") }
-                AppField { id: queueStart; objectName: "queueStart"; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD HH:mm" }
-                Label { text: qsTr("Stop date and time") }
-                AppField { id: queueStop; objectName: "queueStop"; Layout.fillWidth: true }
-                Label { text: qsTr("Repeat every (minutes, 0 = once)") }
-                SpinBox { id: queueRepeat; from: 0; to: 525600; editable: true }
+            anchors.fill: parent; spacing: 12
+            ScrollView {
+                id: scheduleScroll; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                ColumnLayout {
+                    width: scheduleScroll.availableWidth; spacing: 12
+                    GridLayout {
+                        columns: 2; Layout.fillWidth: true; columnSpacing: 12; rowSpacing: 12
+                        Label { text: qsTr("Queue"); font.pixelSize: 11; color: win.muted }
+                        IdmComboBox { appWindow: win; id: queueName; objectName: "queueName"; editable: true; Layout.fillWidth: true; model: win.automationAvailable ? automation.queues.map(q => q.name) : ["Main download queue"]; onActivated: win.loadQueue() }
+                        Label { text: qsTr("Simultaneous downloads"); font.pixelSize: 11; color: win.muted }
+                        IdmSpinBox { appWindow: win; id: queueConcurrent; objectName: "queueConcurrent"; from: 1; to: 32 }
+                    }
+                    FormDisclosure { id: scheduleTiming; objectName: "scheduleTimingDisclosure"; text: qsTr("Schedule timing"); Layout.fillWidth: true; Layout.topMargin: 12 }
+                    GridLayout {
+                        visible: scheduleTiming.checked; columns: 2; Layout.fillWidth: true; columnSpacing: 12; rowSpacing: 12
+                        Label { text: qsTr("Start date and time"); font.pixelSize: 11; color: win.muted }
+                        AppField { id: queueStart; objectName: "queueStart"; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD HH:mm"; onTextChanged: if (text) scheduleTiming.checked = true }
+                        Label { text: qsTr("Stop date and time"); font.pixelSize: 11; color: win.muted }
+                        AppField { id: queueStop; objectName: "queueStop"; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD HH:mm"; onTextChanged: if (text) scheduleTiming.checked = true }
+                        Label { text: qsTr("Repeat every (minutes, 0 = once)"); font.pixelSize: 11; color: win.muted }
+                        IdmSpinBox { appWindow: win; id: queueRepeat; from: 0; to: 525600; editable: true; onValueChanged: if (value > 0) scheduleTiming.checked = true }
+                    }
+                }
             }
-            Label { text: win.lastError; visible: text.length > 0; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            RowLayout { Layout.alignment: Qt.AlignRight
-                AppButton { objectName: "saveQueueButton"; text: qsTr("Save schedule"); onClicked: win.saveQueue(false) }
-                AppButton { text: qsTr("Start now"); onClicked: win.saveQueue(true) }
-                AppButton { text: qsTr("Stop"); onClicked: { automation.stopQueue(queueName.editText); schedulerDialog.close() } }
+            Label { text: win.lastError; visible: text.length > 0; color: win.danger; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            RowLayout { Layout.alignment: Qt.AlignRight; spacing: 8
                 AppButton { text: qsTr("Close"); onClicked: schedulerDialog.close() }
+                AppButton { text: qsTr("Stop"); onClicked: { automation.stopQueue(queueName.editText); schedulerDialog.close() } }
+                AppButton { objectName: "saveQueueButton"; text: qsTr("Save schedule"); onClicked: win.saveQueue(false) }
+                AppButton { primary: true; text: qsTr("Start now"); onClicked: win.saveQueue(true) }
             }
         }
     }
@@ -1052,9 +1194,9 @@ ApplicationWindow {
             jobQueue.editText = policy.queue || "Main download queue"
             jobPriority.currentIndex = policy.priority > 0 ? 1 : policy.priority < 0 ? 2 : 0
         }
-        ColumnLayout { anchors.fill: parent; spacing: 10
-            ComboBox { id: jobQueue; objectName: "jobQueue"; editable: true; Layout.fillWidth: true; model: win.automationAvailable ? automation.queues.map(q => q.name) : ["Main download queue"] }
-            ComboBox { id: jobPriority; objectName: "jobPriority"; model: [qsTr("Normal priority"),qsTr("High priority"),qsTr("Low priority")] }
+        ColumnLayout { anchors.fill: parent; spacing: 12
+            IdmComboBox { appWindow: win; id: jobQueue; objectName: "jobQueue"; editable: true; Layout.fillWidth: true; model: win.automationAvailable ? automation.queues.map(q => q.name) : ["Main download queue"] }
+            IdmComboBox { appWindow: win; id: jobPriority; objectName: "jobPriority"; model: [qsTr("Normal priority"),qsTr("High priority"),qsTr("Low priority")] }
             Label { text: win.lastError; visible: text.length > 0; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             AppButton { objectName: "savePolicyButton"; text: qsTr("OK"); onClicked: { if (automation.setJobPolicy(win.selectedId,{queue:jobQueue.editText,priority:[0,10,-10][jobPriority.currentIndex]})) policyDialog.close(); else win.lastError=automation.error } }
         }
@@ -1062,8 +1204,8 @@ ApplicationWindow {
     NativeDialog {
         id: listDialog; objectName: "listDialog"; property bool importing: true
         title: importing ? qsTr("Import downloads") : qsTr("Export downloads"); modal: true; width: 590; anchors.centerIn: parent
-        ColumnLayout { anchors.fill: parent; spacing: 10
-            Label { text: listDialog.importing ? qsTr("Choose a JSON download list or a text file containing one URL per line.") : qsTr("Export filenames, URLs, descriptions and queue policies. Cookies and credentials are excluded."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+        ColumnLayout { anchors.fill: parent; spacing: 12
+            Label { text: listDialog.importing ? qsTr("Choose a JSON list or a text file with one URL per line.") : qsTr("Export URLs, filenames, descriptions and queue policies. Cookies and credentials are excluded."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
             AppField { id: listPath; objectName: "listPath"; Layout.fillWidth: true; placeholderText: "/home/user/Downloads/download-list.json" }
             Label { text: win.lastError; visible: text.length > 0; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             RowLayout { Layout.alignment: Qt.AlignRight
@@ -1076,7 +1218,7 @@ ApplicationWindow {
         id: editDialog; objectName: "editDialog"; property bool renaming: false
         title: renaming ? qsTr("Rename file") : qsTr("Refresh download address"); width: 590; modal: true; anchors.centerIn: parent
         onOpened: { win.lastError=""; editValue.text=win.selected ? (renaming ? win.selected.name : win.selected.url) : "" }
-        ColumnLayout { anchors.fill: parent; spacing: 10
+        ColumnLayout { anchors.fill: parent; spacing: 12
             AppField { id: editValue; objectName: "editValue"; Layout.fillWidth: true }
             Label { text: win.lastError; visible: text.length > 0; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             RowLayout { Layout.alignment: Qt.AlignRight
@@ -1087,7 +1229,7 @@ ApplicationWindow {
     }
     NativeDialog {
         id: grabberDialog; objectName: "grabberDialog"; title: qsTr("Site Grabber"); modal: true; width: 650; anchors.centerIn: parent
-        ColumnLayout { anchors.fill: parent; spacing: 10
+        ColumnLayout { anchors.fill: parent; spacing: 12
             GridLayout {
                 columns: 2; Layout.fillWidth: true
                 Label { text: qsTr("Website URL") }
@@ -1095,10 +1237,10 @@ ApplicationWindow {
                 Label { text: qsTr("Save to") }
                 AppField { id: grabberDirectory; objectName: "grabberDirectory"; Layout.fillWidth: true; text: win.defaultDirectory }
                 Label { text: qsTr("Link depth") }
-                SpinBox { id: grabberDepth; from: 0; to: 5; value: 1 }
+                IdmSpinBox { appWindow: win; id: grabberDepth; from: 0; to: 5; value: 1 }
             }
             AppCheckBox { id: synchronizeCheck; text: qsTr("Synchronize this website periodically") }
-            RowLayout { enabled: synchronizeCheck.checked; Label { text: qsTr("Interval (minutes)") } SpinBox { id: synchronizeInterval; from: 1; to: 525600; value: 60; editable: true } }
+            RowLayout { visible: synchronizeCheck.checked; Label { text: qsTr("Interval (minutes)") } IdmSpinBox { appWindow: win; id: synchronizeInterval; from: 1; to: 525600; value: 60; editable: true } }
             Label { text: win.automationAvailable ? String(automation.grabber.status || "") + "  " + win.bytes(automation.grabber.received || 0) : "" }
             Label { text: win.automationAvailable ? automation.grabber.error || automation.error : ""; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             RowLayout { Layout.alignment: Qt.AlignRight
@@ -1124,11 +1266,35 @@ ApplicationWindow {
         }
     }
     NativeDialog {
-        id: shortcutsDialog; title: qsTr("Keyboard shortcuts"); width: 430; anchors.centerIn: parent; modal: true; standardButtons: Dialog.Close
-        Label { text: qsTr("Ctrl+N    Add URL\nEnter       Download progress\nSpace      Stop or resume selected\nDelete     Remove selected download\n↑ / ↓       Select download\nF1            Keyboard shortcuts\nCtrl+Q    Exit"); lineHeight: 1.7 }
+        id: shortcutsDialog; title: qsTr("Keyboard shortcuts"); width: 450; anchors.centerIn: parent; modal: true; standardButtons: Dialog.Close
+        ColumnLayout {
+            width: parent.width; spacing: 16
+            Repeater {
+                model: [
+                    {keys:"Ctrl+N", action:qsTr("Add download")},
+                    {keys:"Enter", action:qsTr("Download progress")},
+                    {keys:"Space", action:qsTr("Pause or resume")},
+                    {keys:"Delete", action:qsTr("Remove download")},
+                    {keys:"↑ / ↓", action:qsTr("Select download")},
+                    {keys:"F1", action:qsTr("Keyboard shortcuts")},
+                    {keys:"Ctrl+Q", action:qsTr("Save and quit")}
+                ]
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true; spacing: 20
+                    Label { text: modelData.keys; font.family: win.mono; font.pixelSize: 12; color: win.muted; Layout.preferredWidth: 100 }
+                    Label { text: modelData.action; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                }
+            }
+        }
     }
     NativeDialog {
         id: aboutDialog; title: qsTr("About"); width: 430; anchors.centerIn: parent; modal: true; standardButtons: Dialog.Close
-        Label { width: parent.width; wrapMode: Text.WordWrap; text: qsTr("IDM Native\nIndependent native download manager with an IDM-style interface. It is not an official Tonec product.\nHTTP / HTTPS, browser handoff and video / audio downloads.") }
+        ColumnLayout {
+            width: parent.width; spacing: 12
+            Label { text: "IDM Native"; font.pixelSize: 18; font.weight: Font.DemiBold }
+            Label { text: qsTr("Independent download manager for files and media."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Label { text: qsTr("Not affiliated with Tonec."); color: win.muted; font.pixelSize: 12 }
+        }
     }
 }

@@ -14,9 +14,11 @@ bin/test-features
 bin/test-parity
 bin/test-system
 node --test tests/browser_extension_test.mjs
+node tests/browser_popup_ui_test.mjs
 python3 tests/install_browser_test.py
 python3 tests/website_worker_test.py
 python3 tests/media_quality_test.py
+python3 tests/mediaworker_test.py
 python3 tests/cli_test.py
 node tests/browser_e2e.mjs
 python3 tools/analyze_idm.py --self-test

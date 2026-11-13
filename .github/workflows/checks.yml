@@ -18,6 +18,8 @@ jobs:
         run: bin/test-bridge
       - name: Browser extension
         run: node --test tests/browser_extension_test.mjs
+      - name: Browser popup and capture interface
+        run: node tests/browser_popup_ui_test.mjs
       - name: Browser registration
         run: python tests/install_browser_test.py
       - name: Queue and scheduling behavior
@@ -30,6 +32,8 @@ jobs:
         run: bin/test-tls
       - name: Media quality variants
         run: python tests/media_quality_test.py
+      - name: Python module and standalone yt-dlp loading
+        run: python tests/mediaworker_test.py
       - name: Update official antivirus definitions
         run: freshclam --stdout
       - name: Scanner and completion integration
@@ -45,4 +49,4 @@ jobs:
       - name: Command line
         run: python tests/cli_test.py
       - name: Static tooling
-        run: python -m py_compile tools/*.py tests/*.py
+        run: python -m py_compile tools/*.py tests/*.py src/mediaworker.py

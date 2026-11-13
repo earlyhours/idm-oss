@@ -10,6 +10,9 @@ import urllib.parse
 import urllib.request
 import time
 import base64
+import importlib
+import shutil
+import zipfile
 
 
 def emit(**frame):
@@ -32,8 +35,22 @@ def scope_headers(headers, target, source_origin, context):
     return result
 
 
+def load_ytdlp():
+    try:
+        return importlib.import_module("yt_dlp")
+    except ModuleNotFoundError as error:
+        if error.name != "yt_dlp":
+            raise
+        executable = shutil.which("yt-dlp")
+        if not executable or not zipfile.is_zipfile(executable):
+            raise
+        # The standalone Unix release contains the same importable Python package.
+        sys.path.insert(0, str(Path(executable).resolve(strict=True)))
+        return importlib.import_module("yt_dlp")
+
+
 def run(config):
-    import yt_dlp
+    yt_dlp = load_ytdlp()
     from yt_dlp.networking import Request, Response
     from yt_dlp.networking.exceptions import HTTPError, TransportError
     from yt_dlp.downloader.external import FFmpegFD
@@ -219,7 +236,7 @@ def main():
         else:
             run(config)
     except ImportError:
-        emit(type="error", error="The system Python cannot load yt-dlp. Install the free yt-dlp package.")
+        emit(type="error", error="Cannot load yt-dlp from its Python package or standalone executable. Reinstall yt-dlp.")
         return 1
     except Exception:
         # Exceptions can embed signed media URLs, cookies, or authorization. Keep them private.

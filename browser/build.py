@@ -14,4 +14,6 @@ for browser in ('chromium', 'firefox'):
     shutil.copyfile(root / browser / 'manifest.json', output / 'manifest.json')
     for name in ('background.js', 'content.js', 'popup.js', 'popup.html', 'popup.css'):
         shutil.copyfile(root / name, output / name)
+    shutil.copytree(root / 'icons', output / 'icons', dirs_exist_ok=True)
+    shutil.copytree(root / 'fonts', output / 'fonts', dirs_exist_ok=True)
     print(output)
