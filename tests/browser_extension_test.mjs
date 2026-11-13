@@ -198,6 +198,37 @@ test('bounded per-tab sources and navigation cleanup work',async()=>{
   assert.equal((await w.message({type:'sources',tabId:7})).sources.length,0);
 });
 
+test('captured header retention evicts oldest contexts across tabs within a shared budget',async()=>{
+  const w=worker(),token='a'.repeat(60000);
+  for(let index=0;index<40;index++)w.headers(`https://media.test/budget-${index}.mp4`,[{name:'Authorization',value:token}],7+index%4);
+  assert.equal((await w.message({type:'download',tabId:7,url:'https://media.test/budget-0.mp4'})).ok,true);
+  assert.equal(w.nativeCalls.at(-1).message.request.headers.Authorization,undefined);
+  assert.equal((await w.message({type:'download',tabId:10,url:'https://media.test/budget-39.mp4'})).ok,true);
+  assert.equal(w.nativeCalls.at(-1).message.request.headers.Authorization,token);
+  const url='https://media.test/oversize.mp4';
+  w.headers(url,[{name:'Authorization',value:'stale-secret'}]);
+  w.headers(url,[{name:'X-First',value:'a'.repeat(65536)},{name:'X-Second',value:'b'.repeat(65536)}]);
+  assert.equal((await w.message({type:'download',tabId:7,url})).ok,true);
+  const headers=w.nativeCalls.at(-1).message.request.headers;
+  assert.equal(headers.Authorization,undefined);assert.equal(headers['X-First'],undefined);assert.equal(headers['X-Second'],undefined);
+  w.headers(url,Array.from({length:65},(_,index)=>({name:`X-Count-${index}`,value:'value'})));
+  assert.equal((await w.message({type:'download',tabId:7,url})).ok,true);
+  assert.equal(w.nativeCalls.at(-1).message.request.headers['X-Count-0'],undefined);
+});
+
+test('closing or navigating a tab releases its header budget without evicting other tabs',async()=>{
+  for(const navigate of [false,true]){
+    const w=worker(),token='a'.repeat(60000),url='https://media.test/keep.mp4';
+    w.headers(url,[{name:'Authorization',value:'keep-secret'}],8);
+    for(let index=0;index<23;index++)w.headers(`https://media.test/closed-${index}.mp4`,[{name:'Authorization',value:token}],7);
+    if(navigate)w.api.tabs.onUpdated.listeners[0](7,{url:'https://page.test/new'},{url:'https://page.test/new'});
+    else w.api.tabs.onRemoved.listeners[0](7);
+    for(let index=0;index<23;index++)w.headers(`https://media.test/new-${index}.mp4`,[{name:'Authorization',value:token}],9);
+    assert.equal((await w.message({type:'download',tabId:8,url})).ok,true);
+    assert.equal(w.nativeCalls.at(-1).message.request.headers.Authorization,'keep-secret');
+  }
+});
+
 test('explicit all-links batch deduplicates, validates, and reports partial acceptance',async()=>{
   const w=worker();
   w.setNative((_host,_message,callback)=>callback({ok:true,ids:['accepted'],errors:['Second URL rejected']}));

@@ -368,6 +368,17 @@ private slots:
         auto *qualityPopup = mediaFormat->property("popup").value<QObject *>();
         QVERIFY(qualityPopup);
         QTRY_VERIFY(qualityPopup->property("visible").toBool());
+        auto *qualityList = qualityPopup->property("contentItem").value<QObject *>();
+        QVERIFY(qualityList);
+        const QStringList qualityLabels{"Best quality", "1080p", "720p", "Audio only"};
+        for (int index = 0; index < qualityLabels.size(); ++index) {
+            QObject *option = nullptr;
+            QTRY_VERIFY((option = withProperty(qualityList, "index", index)));
+            QCOMPARE(option->property("text").toString(), qualityLabels[index]);
+            auto *label = option->property("contentItem").value<QObject *>();
+            QVERIFY(label);
+            QCOMPARE(label->property("text").toString(), qualityLabels[index]);
+        }
         QTest::keyClick(window, Qt::Key_Down);
         QTest::qWait(100);
         QVERIFY(capture(window, "/tmp/idm-native-quality-menu.png"));

@@ -3,7 +3,10 @@
   'use strict';
   const HOST = 'org.earlyhours.idm_native';
   const MAX_SOURCES = 32, MAX_CONTEXTS = 100, MAX_TABS = 256;
+  const MAX_CONTEXT_BYTES = 128 * 1024, MAX_RETAINED_CONTEXT_BYTES = 4 * 1024 * 1024;
   const tabs = new Map();
+  const retainedContexts = new Set();
+  let retainedContextBytes = 0;
   const allowedHeaders = new Set(['cookie', 'authorization', 'referer', 'user-agent', 'origin', 'accept', 'accept-language']);
   const mediaPattern = /\.(?:m3u8|mpd|mp4|webm|m4v|mov|mp3|m4a|aac|ogg|wav)(?:[?#]|$)/i;
   let intercept = false, interceptTypes = '*', showPanel = true, panelPosition = 'right';
@@ -20,10 +23,21 @@
   function tabState(id) {
     if (!Number.isInteger(id) || id < 0) return null;
     if (!tabs.has(id)) {
-      if (tabs.size >= MAX_TABS) tabs.delete(tabs.keys().next().value);
+      if (tabs.size >= MAX_TABS) forgetTab(tabs.keys().next().value);
       tabs.set(id, { sources: new Map(), contexts: new Map(), pageUrl: '', title: '', status: '' });
     }
     return tabs.get(id);
+  }
+  function forgetContext(context) {
+    if (!context) return;
+    context.state.contexts.delete(context.url);
+    retainedContexts.delete(context);
+    retainedContextBytes -= context.bytes;
+  }
+  function forgetTab(id) {
+    const state = tabs.get(id);
+    if (state) for (const context of state.contexts.values()) forgetContext(context);
+    tabs.delete(id);
   }
   function boundedSet(map, key, value, limit) {
     map.delete(key);
@@ -142,14 +156,24 @@
   function requestHeaders(details) {
     const state = tabState(details.tabId), url = httpUrl(details.url);
     if (!state || !url || details.method !== 'GET') return;
+    forgetContext(state.contexts.get(url));
     const headers = {};
+    // Count UTF-16 storage for retained URL, header names and values.
+    let bytes = 2 * url.length, count = 0;
     for (const header of details.requestHeaders || []) {
       const name = String(header.name).toLowerCase(), value = header.value;
       if ((!allowedHeaders.has(name) && !/^x-[a-z0-9!#$%&'*+.^_`|~-]+$/i.test(name)) || typeof value !== 'string' || value.length > 65536 || /[\r\n]/.test(value)) continue;
       const key = { cookie: 'Cookie', authorization: 'Authorization', 'accept-language': 'Accept-Language', referer: 'Referer', 'user-agent': 'User-Agent', origin: 'Origin', accept: 'Accept' }[name] || header.name;
+      bytes += 2 * (key.length + value.length);
+      if (++count > 64 || bytes > MAX_CONTEXT_BYTES) return;
       headers[key] = value;
     }
-    boundedSet(state.contexts, url, { time: Date.now(), headers }, MAX_CONTEXTS);
+    const context = { time: Date.now(), headers, bytes, state, url };
+    state.contexts.set(url, context);
+    retainedContexts.add(context);
+    retainedContextBytes += bytes;
+    if (state.contexts.size > MAX_CONTEXTS) forgetContext(state.contexts.values().next().value);
+    while (retainedContextBytes > MAX_RETAINED_CONTEXT_BYTES) forgetContext(retainedContexts.values().next().value);
     if (mediaPattern.test(url)) record(details.tabId, { url, pageUrl: details.documentUrl || details.initiator });
   }
   try {
@@ -224,9 +248,9 @@
     }
   });
 
-  chrome.tabs.onRemoved.addListener(id => tabs.delete(id));
+  chrome.tabs.onRemoved.addListener(forgetTab);
   chrome.tabs.onUpdated.addListener((id, change, tab) => {
-    if (change.url) tabs.delete(id);
+    if (change.url) forgetTab(id);
     const state = tabState(id);
     if (state) { state.pageUrl = httpUrl(tab.url); state.title = (tab.title || '').slice(0, 300); }
   });
