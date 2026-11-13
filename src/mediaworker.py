@@ -229,8 +229,12 @@ def main():
         os.killpg(os.getpgrp(), signum)
 
     signal.signal(signal.SIGTERM, terminate)
+    config = {}
     try:
-        config = json.load(sys.stdin)
+        value = json.load(sys.stdin)
+        if not isinstance(value, dict):
+            raise ValueError("Worker configuration must be an object")
+        config = value
         if config.get("kind") == "ftp":
             run_ftp(config)
         else:

@@ -1,4 +1,5 @@
 """Verify both yt-dlp distribution forms with an isolated worker interpreter."""
+import json
 import os
 from pathlib import Path
 import runpy
@@ -67,6 +68,16 @@ class MediaWorkerTests(unittest.TestCase):
         result = self.load()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ModuleNotFoundError", result.stderr)
+
+    def test_malformed_or_non_object_input_emits_one_private_json_error(self):
+        expected = {"type": "error", "error": "Media capture failed. The source is unavailable, needs different authorization, or uses an unsupported media format."}
+        for value in ('{"private-token":', '[]', 'null', '42', '"private-token"'):
+            with self.subTest(value=value):
+                result = subprocess.run(["/usr/bin/python3", str(WORKER)], input=value,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(json.loads(result.stdout), expected)
 
 
 if __name__ == "__main__":

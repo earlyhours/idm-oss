@@ -12,13 +12,13 @@ const event = () => ({listeners:[], addListener(fn, ...options) { this.listeners
 const flush = async () => { for(let i=0;i<8;i++) await Promise.resolve(); };
 
 function worker() {
-  const nativeCalls=[], cancellations=[], menus=[], statuses=[], storage={}, sent=[];
+  const nativeCalls=[], cancellations=[], menus=[], statuses=[], storage={}, sent=[], cookieReads=[];
   const api={runtime:{id:extensionId,lastError:undefined,onInstalled:event(),onMessage:event()},
     webRequest:{onBeforeSendHeaders:event(),onHeadersReceived:event()},
     tabs:{onRemoved:event(),onUpdated:event(),get(id,callback){callback({id,url:'https://page.test/watch',title:'Fixture page'});},sendMessage(id,message,callback){sent.push({id,message});callback?.({ok:true,urls:['https://files.test/a.zip','https://files.test/b.pdf'],pageUrl:'https://page.test/watch',title:'Links'});}},
     action:{setBadgeText(value){statuses.push(value.text);},setTitle(){}},
     contextMenus:{onClicked:event(),removeAll(callback){callback();},create(menu){menus.push(menu);}},
-    cookies:{getAll(_details,callback){callback([{name:'session',value:'cookie-value'}]);}},
+    cookies:{getAllCookieStores(callback){callback([{id:'regular-store',tabIds:[7]}]);},getAll(details,callback){cookieReads.push(plain(details));callback([{name:'session',value:'cookie-value'}]);}},
     storage:{local:{get(defaults,callback){callback({...defaults,...storage});},set(value,callback){Object.assign(storage,value);callback?.();}}},
     downloads:{onCreated:event(),cancel(id,callback){cancellations.push(id);callback?.();}}};
   let nativeHandler=(_host,_message,callback)=>callback({ok:true,id:'accepted-id',ids:['one','two'],errors:[]});
@@ -28,7 +28,7 @@ function worker() {
   function message(value,from=sender){return new Promise(resolve=>api.runtime.onMessage.listeners[0](value,from,result=>resolve(plain(result))));}
   function headers(url,values=[],tabId=7){api.webRequest.onBeforeSendHeaders.listeners[0]({tabId,url,method:'GET',requestHeaders:values,documentUrl:'https://page.test/watch'});}
   function response(url,mime,tabId=7){api.webRequest.onHeadersReceived.listeners[0]({tabId,url,method:'GET',statusCode:200,responseHeaders:[{name:'Content-Type',value:mime}],documentUrl:'https://page.test/watch'});}
-  return {api,nativeCalls,cancellations,menus,statuses,storage,sent,message,headers,response,setNative(fn){nativeHandler=fn;}};
+  return {api,nativeCalls,cancellations,menus,statuses,storage,sent,cookieReads,message,headers,response,setNative(fn){nativeHandler=fn;}};
 }
 
 test('stable Chromium identity and Firefox native-host identity match manifests',async()=>{
@@ -117,6 +117,50 @@ test('manifest interception uses media capture even without a useful MIME type',
   await w.api.downloads.onCreated.listeners[0]({id:91,url:'https://files.test/stream.m3u8',mime:'application/octet-stream'});
   assert.equal(w.nativeCalls[0].message.request.media,true);
   assert.deepEqual(w.cancellations,[91]);
+});
+
+test('interception without a surviving tab never reads the default cookie store',async()=>{
+  for(const captured of [false,true]){
+    const w=worker(),url='https://files.test/file.zip';
+    await w.message({type:'settings',intercept:true,tabId:7});
+    if(captured)w.headers(url,[{name:'Accept',value:'application/zip'}]);
+    w.api.tabs.get=(_id,callback)=>{w.api.runtime.lastError={message:'Tab closed'};callback();w.api.runtime.lastError=undefined;};
+    await w.api.downloads.onCreated.listeners[0]({id:45,url});
+    assert.deepEqual(w.cookieReads,[]);
+    assert.equal(w.nativeCalls[0].message.request.headers.Cookie,undefined);
+    assert.deepEqual(w.cancellations,[45]);
+  }
+});
+
+test('cookie fallback uses only the explicit container or matching tab store',async()=>{
+  for(const container of [true,false]){
+    const w=worker(),url='https://media.test/private.mp4';
+    w.headers(url);
+    if(container)w.api.tabs.get=(id,callback)=>callback({id,cookieStoreId:'firefox-container-2'});
+    else w.api.cookies.getAllCookieStores=callback=>callback([{id:'regular-store',tabIds:[1]},{id:'private-store',tabIds:[7]}]);
+    assert.equal((await w.message({type:'download',tabId:7,url})).ok,true);
+    assert.deepEqual(w.cookieReads,[{url,storeId:container?'firefox-container-2':'private-store'}]);
+    assert.equal(w.nativeCalls[0].message.request.headers.Cookie,'session=cookie-value');
+  }
+  const w=worker(),url='https://media.test/private.mp4';
+  w.headers(url);w.api.cookies.getAllCookieStores=callback=>callback([]);
+  assert.equal((await w.message({type:'download',tabId:7,url})).ok,true);
+  assert.deepEqual(w.cookieReads,[]);
+  assert.equal(w.nativeCalls[0].message.request.headers.Cookie,undefined);
+});
+
+test('intercepted downloads cannot borrow captured credentials from another cookie store',async()=>{
+  for(const container of [true,false]){
+    const w=worker(),url='https://files.test/shared.zip';
+    await w.message({type:'settings',intercept:true,tabId:7});
+    w.headers(url,[{name:'Cookie',value:'session=other-store'}],7);
+    w.headers(url,[{name:'Cookie',value:'session=own-store'}],8);
+    w.api.tabs.get=(id,callback)=>callback({id,cookieStoreId:container?(id===8?'own-container':'other-container'):undefined,incognito:id===8});
+    await w.api.downloads.onCreated.listeners[0]({id:46,url,...(container?{cookieStoreId:'own-container'}:{incognito:true})});
+    assert.equal(w.nativeCalls[0].message.request.headers.Cookie,'session=own-store');
+    assert.deepEqual(w.cookieReads,[]);
+    assert.deepEqual(w.cancellations,[46]);
+  }
 });
 
 test('failed native handoff and malformed acceptance leave browser download running',async()=>{

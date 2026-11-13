@@ -77,11 +77,17 @@
       });
     });
   }
-  function cookies(url, tab) {
+  async function cookies(url, tab) {
+    if (!Number.isInteger(tab?.id) || tab.id < 0) return '';
+    const storeId = tab.cookieStoreId || await new Promise(resolve => {
+      chrome.cookies.getAllCookieStores(stores => {
+        const failure = chrome.runtime.lastError;
+        resolve(!failure && Array.isArray(stores) ? stores.find(store => store.tabIds.includes(tab.id))?.id : '');
+      });
+    });
+    if (!storeId) return '';
     return new Promise(resolve => {
-      const details = { url };
-      if (tab?.cookieStoreId) details.storeId = tab.cookieStoreId;
-      chrome.cookies.getAll(details, result => {
+      chrome.cookies.getAll({ url, storeId }, result => {
         if (chrome.runtime.lastError || !Array.isArray(result)) return resolve('');
         resolve(result.filter(item => typeof item.name === 'string' && typeof item.value === 'string')
           .map(item => `${item.name}=${item.value}`).join('; '));
@@ -199,12 +205,15 @@
   chrome.downloads.onCreated.addListener(async item => {
     const url = httpUrl(item.finalUrl || item.url);
     if (!intercept || !url || !matchesType(item, url) || item.state === 'complete' || item.byExtensionId === chrome.runtime.id) return;
-    let tabId = -1, newest = 0;
+    let tabId = -1, newest = 0, tab = null;
     for (const [id, state] of tabs) {
       const context = state.contexts.get(url);
-      if (context && context.time > newest) { tabId = id; newest = context.time; }
+      if (!context || context.time <= newest) continue;
+      const candidate = await getTab(id);
+      if (!candidate || (item.cookieStoreId && item.cookieStoreId !== candidate.cookieStoreId) ||
+          (typeof item.incognito === 'boolean' && item.incognito !== candidate.incognito)) continue;
+      tabId = id; newest = context.time; tab = candidate;
     }
-    const tab = await getTab(tabId);
     try {
       await handoff(tabId, { url, media: mediaMime(item.mime) || mediaPattern.test(url), pageUrl: item.referrer }, tab);
       chrome.downloads.cancel(item.id, () => {
