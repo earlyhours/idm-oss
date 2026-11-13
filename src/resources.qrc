@@ -1,0 +1,14 @@
+<RCC><qresource prefix="/">
+<file alias="Main.qml">Main.qml</file>
+<file alias="IdmMenu.qml">IdmMenu.qml</file>
+<file alias="IdmMenuItem.qml">IdmMenuItem.qml</file>
+<file alias="IdmMenuSeparator.qml">IdmMenuSeparator.qml</file>
+<file alias="IdmComboBox.qml">IdmComboBox.qml</file>
+<file alias="IdmSpinBox.qml">IdmSpinBox.qml</file>
+<file alias="IdmScrollBar.qml">IdmScrollBar.qml</file>
+<file alias="mediaworker.py">mediaworker.py</file>
+<file alias="website_worker.py">../tools/website_worker.py</file>
+<file alias="i18n/da.json">i18n/da.json</file>
+<file alias="agent-skill.md">agent-skill.md</file>
+<file alias="fonts/GeistPixel-Square.ttf">../assets/fonts/GeistPixel-Square.ttf</file>
+</qresource></RCC>

@@ -1,0 +1,1049 @@
+{
+  "features": [
+    {
+      "id": 1,
+      "name": "Multithreaded Downloading",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 2,
+      "name": "Dynamic File Segmentation",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 3,
+      "name": "Download Acceleration",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Controlled fixture2690ms serial vs705ms four workers,3.82x. Not an Internet-wide speed guarantee or a benchmark against original IDM."
+    },
+    {
+      "id": 4,
+      "name": "Automatic Browser Integration",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 5,
+      "name": "One-Click Download Capture",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 6,
+      "name": "Video Download Detection",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 7,
+      "name": "Floating Video Download Panel",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 8,
+      "name": "Streaming Video Downloading",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/mediaworker.py"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/media_quality_test.py",
+        "tests/browser_e2e.mjs"
+      ],
+      "evidence": "Playable direct/HLS/DASH output; real720p/1080p/Best/audio-only choice tests; actual browser-captured decoded frames match fixture."
+    },
+    {
+      "id": 9,
+      "name": "HLS (M3U8) Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/mediaworker.py"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/media_quality_test.py",
+        "tests/browser_e2e.mjs"
+      ],
+      "evidence": "Playable direct/HLS/DASH output; real720p/1080p/Best/audio-only choice tests; actual browser-captured decoded frames match fixture."
+    },
+    {
+      "id": 10,
+      "name": "MPEG-DASH Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/mediaworker.py"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/media_quality_test.py",
+        "tests/browser_e2e.mjs"
+      ],
+      "evidence": "Playable direct/HLS/DASH output; real720p/1080p/Best/audio-only choice tests; actual browser-captured decoded frames match fixture."
+    },
+    {
+      "id": 11,
+      "name": "Video Quality Selection",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/mediaworker.py"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/media_quality_test.py",
+        "tests/browser_e2e.mjs"
+      ],
+      "evidence": "Playable direct/HLS/DASH output; real720p/1080p/Best/audio-only choice tests; actual browser-captured decoded frames match fixture."
+    },
+    {
+      "id": 12,
+      "name": "Pause and Resume Downloads",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 13,
+      "name": "Interrupted Download Recovery",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 14,
+      "name": "Automatic Download Retry",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 15,
+      "name": "Expired Download Link Refresh",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/automation.cpp",
+        "browser/background.js",
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/automation_tests.cpp",
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "The engine suite passes 51 checks. Real HTTP 403 recovery with a fresh Cookie, Bearer token and X-Api-Key for the same URL keeps one job and produces matching bytes. UI tests verify site and per-job header delivery, private fields, invalid-input rejection and managed-header filtering."
+    },
+    {
+      "id": 16,
+      "name": "Download Scheduling",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 17,
+      "name": "Download Queues",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 18,
+      "name": "Batch Downloading",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/final_parity_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 19,
+      "name": "Multiple Simultaneous Downloads",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 20,
+      "name": "Download Speed Limiting",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 21,
+      "name": "Download Priority Management",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 22,
+      "name": "Automatic File Categorization",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 23,
+      "name": "Custom Download Directories",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 24,
+      "name": "Clipboard URL Monitoring",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 25,
+      "name": "Drag-and-Drop Downloads",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "Real QML/UI suite:6 passes with actual downloads, auth, dialogs, policies, import/export, drag/drop, language and dark mode."
+    },
+    {
+      "id": 26,
+      "name": "Right-Click Context Menu Integration",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 27,
+      "name": "Download All Links on a Page",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp",
+        "tests/final_parity_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 28,
+      "name": "Website Grabber",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "tools/website_worker.py",
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/website_worker_test.py",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "10 real HTTP crawler/offline/sync cases; actual controller periodic dispatch and QML grabber output checked."
+    },
+    {
+      "id": 29,
+      "name": "Recursive Website Downloading",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "tools/website_worker.py",
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/website_worker_test.py",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "10 real HTTP crawler/offline/sync cases; actual controller periodic dispatch and QML grabber output checked."
+    },
+    {
+      "id": 30,
+      "name": "Offline Website Mirroring",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "tools/website_worker.py",
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/website_worker_test.py",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "10 real HTTP crawler/offline/sync cases; actual controller periodic dispatch and QML grabber output checked."
+    },
+    {
+      "id": 31,
+      "name": "HTTP/HTTPS Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/tls_tests.cpp",
+        "tests/cli_test.py"
+      ],
+      "evidence": "5 TLS checks:trusted localCA exact-output success, untrusted certificate/hostname mismatch refusal; ordinary HTTP output and live HTTPS documented."
+    },
+    {
+      "id": 32,
+      "name": "FTP Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 33,
+      "name": "Proxy Server Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 34,
+      "name": "SOCKS Proxy Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 35,
+      "name": "Authenticated Downloads",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 36,
+      "name": "Browser Cookie Integration",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 37,
+      "name": "HTTP Referer Support",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 38,
+      "name": "Custom HTTP Headers",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp",
+        "src/automation.cpp",
+        "browser/background.js",
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/automation_tests.cpp",
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "The engine suite passes 51 checks. Real HTTP 403 recovery with a fresh Cookie, Bearer token and X-Api-Key for the same URL keeps one job and produces matching bytes. UI tests verify site and per-job header delivery, private fields, invalid-input rejection and managed-header filtering."
+    },
+    {
+      "id": 39,
+      "name": "User-Agent Customization",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 40,
+      "name": "Automatic Antivirus Scanning",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect."
+    },
+    {
+      "id": 41,
+      "name": "Download Completion Notifications",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
+    },
+    {
+      "id": 42,
+      "name": "Automatic Shutdown After Downloads",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
+    },
+    {
+      "id": 43,
+      "name": "Automatic Hang-Up After Downloads",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Omarchy equivalent uses NetworkManager networking off, not legacy dial-up modem control. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
+    },
+    {
+      "id": 44,
+      "name": "Command-Line Integration",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/main.cpp"
+      ],
+      "tests": [
+        "tests/cli_test.py",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "Built executable download JSON/exit/status/content checks and framed native-host CLI checks."
+    },
+    {
+      "id": 45,
+      "name": "Download History",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 46,
+      "name": "Download Progress Monitoring",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 47,
+      "name": "Real-Time Download Speed Display",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 48,
+      "name": "Estimated Download Time",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 49,
+      "name": "Multiple Connection Management",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp",
+        "tests/feature_snapshot_tests.cpp"
+      ],
+      "evidence": "Six independent Qt checks observe actual progress, speed compared with measured traffic, ETA, part totals, TCP limits, four files with two simultaneous jobs, pause/restart hashes, categories and ISO dates. Speed and ETA accuracy is established for the controlled fixture."
+    },
+    {
+      "id": 50,
+      "name": "Connection Timeout Handling",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 51,
+      "name": "Automatic Connection Reuse",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 52,
+      "name": "Speed Limiter Scheduler",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 53,
+      "name": "Download Queue Automation",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 54,
+      "name": "Periodic Website Synchronization",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "tools/website_worker.py",
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/website_worker_test.py",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "10 real HTTP crawler/offline/sync cases; actual controller periodic dispatch and QML grabber output checked."
+    },
+    {
+      "id": 55,
+      "name": "Duplicate Download Detection",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 56,
+      "name": "Download File Renaming",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/downloadmanager_tests.cpp"
+      ],
+      "evidence": "Fresh engine suite:51 passes; real local transports, output bytes and failure boundaries."
+    },
+    {
+      "id": 57,
+      "name": "Download Confirmation Dialog",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "Real QML/UI suite:6 passes with actual downloads, auth, dialogs, policies, import/export, drag/drop, language and dark mode."
+    },
+    {
+      "id": 58,
+      "name": "Download Progress Dialog",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "Real QML/UI suite:6 passes with actual downloads, auth, dialogs, policies, import/export, drag/drop, language and dark mode."
+    },
+    {
+      "id": 59,
+      "name": "Browser Download Interception",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 60,
+      "name": "Custom File Type Filtering",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 61,
+      "name": "Download Panel Customization",
+      "owner": "browser",
+      "status": "verified",
+      "implementation": [
+        "browser/background.js",
+        "browser/content.js",
+        "browser/popup.js",
+        "src/browserbridge.cpp"
+      ],
+      "tests": [
+        "tests/browser_extension_test.mjs",
+        "tests/browser_e2e.mjs",
+        "tests/browserbridge_tests.cpp"
+      ],
+      "evidence": "14 unit passes and real Chromium/extension/native-host E2E:cookie-gated MP4/HLS/DASH, decoded frame hashes, interception and fallback."
+    },
+    {
+      "id": 62,
+      "name": "Multilingual Interface",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "English and Danish QML interface, all nativeUIcatalog keys checked; locale/RTL fallback tested. Does not claim every original IDM language."
+    },
+    {
+      "id": 63,
+      "name": "Dark Mode",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "Real QML/UI suite:6 passes with actual downloads, auth, dialogs, policies, import/export, drag/drop, language and dark mode."
+    },
+    {
+      "id": 64,
+      "name": "Sound Notifications",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
+    },
+    {
+      "id": 65,
+      "name": "Keyboard Shortcuts",
+      "owner": "ui",
+      "status": "verified",
+      "implementation": [
+        "src/Main.qml"
+      ],
+      "tests": [
+        "tests/ui_tests.cpp"
+      ],
+      "evidence": "Real QML/UI suite:6 passes with actual downloads, auth, dialogs, policies, import/export, drag/drop, language and dark mode."
+    },
+    {
+      "id": 66,
+      "name": "Download List Import/Export",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 67,
+      "name": "Automatic Download Start",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp",
+        "tests/final_parity_tests.cpp"
+      ],
+      "evidence": "Accepted requests start automatically by default. Download Later dispatches no HTTP request. This does not claim desktop-login autostart."
+    },
+    {
+      "id": 68,
+      "name": "Download Completion Actions",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/system_integration_test.py",
+        "tests/system_integration_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "Real ClamAV clean/EICAR scans using official and fixture databases. Power/network/sound/notification dispatch, errors and cancellation use injected executors; no actual shutdown/disconnect. Physicaleffectsunexercisedbydesign; installedtoolanddispatch/error/cancellationbehaviorverified."
+    },
+    {
+      "id": 69,
+      "name": "Site-Specific Download Settings",
+      "owner": "automation",
+      "status": "verified",
+      "implementation": [
+        "src/automation.cpp"
+      ],
+      "tests": [
+        "tests/automation_tests.cpp",
+        "tests/automation_adversarial_tests.cpp"
+      ],
+      "evidence": "12 controller passes plus22 independent adversarial passes using real local HTTP/files and isolated completion executors."
+    },
+    {
+      "id": 70,
+      "name": "HTTPS Download Support with SSL/TLS",
+      "owner": "engine",
+      "status": "verified",
+      "implementation": [
+        "src/downloadmanager.cpp"
+      ],
+      "tests": [
+        "tests/tls_tests.cpp",
+        "tests/cli_test.py"
+      ],
+      "evidence": "5 TLS checks:trusted localCA exact-output success, untrusted certificate/hostname mismatch refusal; ordinary HTTP output and live HTTPS documented."
+    }
+  ],
+  "testBounds": [
+    "Power, network, audio and desktop notification effects use isolated executors. ClamAV scans run against actual files.",
+    "Firefox persistent installation needs normal browser approval and signing. The real browser test uses Chromium.",
+    "Schedules run while the app is running. Auto-start means starting accepted downloads, not starting at desktop login.",
+    "Website crawling is static, bounded and restricted to the selected origin. Live and DRM-protected media are unsupported.",
+    "English and Danish are included. Other locales use fallback.",
+    "FTP and media resume by restarting capture. Validated HTTP byte ranges resume from saved bytes.",
+    "The controlled benchmark does not establish original IDM performance parity or a universal Internet speedup."
+  ]
+}

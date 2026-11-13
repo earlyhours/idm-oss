@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/automation-adversarial-tests"
+cd "$ROOT/build/automation-adversarial-tests"
+qmake6 "$ROOT/tests/automation_adversarial_tests.pro"
+make -j2
+QT_QPA_PLATFORM=offscreen ./automation_adversarial_tests "$@"

@@ -1,0 +1,247 @@
+{
+  "records": [
+    {
+      "target": "IDMan.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_502ef23242ed91c7fb60fc399a5978364a26a27d51bb74386a49cae19fdd8475",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-ghidra/001-binary_overview.json",
+      "file_sha256": "a00ef79199043aa2d9baf132971bb1d66c5f286a56d976bd2858244d1bce6e77",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 21457,
+        "string_count": 7335
+      }
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_acc6a29fa099893dab4d3c2e092267fdfe372f1f8c3ac9ea496c5016e647aa7e",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-ghidra/024-analyze_function.json",
+      "file_sha256": "54d692b78f18fc9a547077774f9d953a6106f438050b6cbeee5f162156fc4dd1",
+      "address": "0x58b2b0",
+      "name": "FUN_0058b2b0",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x58b2b0",
+            "end": "0x58c726"
+          }
+        ],
+        "total_bytes": 5239,
+        "span_bytes": 5239,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_502ef23242ed91c7fb60fc399a5978364a26a27d51bb74386a49cae19fdd8475",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/001-binary_overview.json",
+      "file_sha256": "a00ef79199043aa2d9baf132971bb1d66c5f286a56d976bd2858244d1bce6e77",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 21457,
+        "string_count": 7335
+      }
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_f283ff34ff4c5421a63bd7fc7a3b6ba248669b88af4a89d2259f42b5c63461bd",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/002-procedure_pseudo_code.json",
+      "file_sha256": "6320af30c5ff57810c7b9b5001fb4ec4c2ddd463377964a2950dde708f484793",
+      "procedure": "0x58b2b0",
+      "pseudocode_characters": 31889,
+      "pseudocode_sha256": "aaa7be87396bff1bbde2f93e784d0a39fc3e3f99f685827d4ffedccc357491a2",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_9062fd8c861fcccfc5858f81ff7cb5934661246bc2162cc9de485da7b6adaeea",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/003-procedure_pseudo_code.json",
+      "file_sha256": "a2009b3b8d09020b66a330a54614c878bdb8b6e80f5d74a8d03f1dd8cf4ab63d",
+      "procedure": "0x5adcd0",
+      "pseudocode_characters": 33852,
+      "pseudocode_sha256": "6c5af5a2dc5889c8e46bfc92b224ff45dba2e3bdb2099b2da21e06c5b1ac9c7b",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_5848c107ab4726966083bb8bd4191e2347be124c55dc24ee838a10a5a9668181",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/004-procedure_pseudo_code.json",
+      "file_sha256": "4056043a567c48784b9e519f9cb1540490c44fc38357b05583280e6341c1e3a8",
+      "procedure": "0x581cf0",
+      "pseudocode_characters": 6760,
+      "pseudocode_sha256": "6ce9f8b82a03568917c0bb7edf4457ad912029d434276c6e192fe735990b927e",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_5d19bc46514bfad56c51fbcde831cb884bad5e98fdb8aea393ed088981886876",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/005-procedure_pseudo_code.json",
+      "file_sha256": "05c1fb86d4131102db57131c58c473ad674f2986d6208caea0ec9765884f45e1",
+      "procedure": "0x5827f0",
+      "pseudocode_characters": 2518,
+      "pseudocode_sha256": "6f284c46b35f5f02aa8ae09ac5dff195ef7735468e63f148f29472af6b203a1b",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_aa1fc0e8fd69b6f29998d5f427d24115ad7050b663692e1c1b3ef1aab7738fec",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/006-procedure_pseudo_code.json",
+      "file_sha256": "1a914a25a4be3ea2f687441b0adc7db49fbfb9877f04c78c94c0da014fe84084",
+      "procedure": "0x58c770",
+      "pseudocode_characters": 49672,
+      "pseudocode_sha256": "1d24715620bd10cdcbeaa05da36e3d32dd7a4126823f125a9f3e11a3d5bbc1f5",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMan.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_0de970b36c70b79bc623d917b1d965cd005250d4c624f6b93d2e57ece0d91c4a",
+      "local_path": "/home/yvm/.cache/idm-analysis/main-focused/007-procedure_pseudo_code.json",
+      "file_sha256": "bfc87c1f5ca30cc9a50815ec68ba6d73900ae3f2b477ce4267e55631d6ec7713",
+      "procedure": "0x5db150",
+      "pseudocode_characters": 9439,
+      "pseudocode_sha256": "9d7db449364d887130da04ea8ad163bcbe4ef91340dc40658bb88e1b2ad12314",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_d8f78e6ba474f0940c544253d7bfed2530e80ed9adc360f39293c0a61e5b4254",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/001-binary_overview.json",
+      "file_sha256": "cc6b02b5c8f533eb257bbfe6d480291f7c87fcd2b39386aeb554710a2534146d",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 162,
+        "string_count": 152
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_e6e1baccd3a3654b918f775584319cc2e4d619fea9c5edf112b77dbf1fcbeec2",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/004-procedure_pseudo_code.json",
+      "file_sha256": "21d18dbcc5a99bb3276eb9e85327ff974e911b5effc4f426c87a6fa5300ef5a5",
+      "procedure": "0x402830",
+      "pseudocode_characters": 15821,
+      "pseudocode_sha256": "5ee5eb85209e96680e8e194133ca4824702ee2673b98779203ba1be3f7b88051",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "procedure_pseudo_code",
+      "evidence_id": "ev_066365456f88307f907d5192ceed0a2a240e80913eeaf85e8b6eb0f93de81a36",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-focused/005-procedure_pseudo_code.json",
+      "file_sha256": "7905e6bf86c0d48f801015023547400efa0e28bbc2896853ffd4052d7d41dfba",
+      "procedure": "0x403530",
+      "pseudocode_characters": 3145,
+      "pseudocode_sha256": "77ad53f210b23b497bfdfdc389d436cb5d41a300a0986e907f16d410371d4099",
+      "pseudocode_available": true
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "binary_overview",
+      "evidence_id": "ev_d8f78e6ba474f0940c544253d7bfed2530e80ed9adc360f39293c0a61e5b4254",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/001-binary_overview.json",
+      "file_sha256": "cc6b02b5c8f533eb257bbfe6d480291f7c87fcd2b39386aeb554710a2534146d",
+      "counts": {
+        "segment_count": 7,
+        "procedure_count": 162,
+        "string_count": 152
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_79514ee0cc6b179c435a3f1c892337082a66c81dc03ed304b6105073a4e39d66",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/010-analyze_function.json",
+      "file_sha256": "8a87bae700feebc5af1cddf74c1ec11e9262ea276dd14b4f621e18c25e933771",
+      "address": "0x403410",
+      "name": "FUN_00403410",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x403410",
+            "end": "0x403494"
+          }
+        ],
+        "total_bytes": 133,
+        "span_bytes": 133,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    },
+    {
+      "target": "IDMMsgHost.exe",
+      "operation": "analyze_function",
+      "evidence_id": "ev_8b86f8e18d1835539dcda21feab08e087730075fc4c01884bbbe1d0ce3fe2a69",
+      "local_path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/011-analyze_function.json",
+      "file_sha256": "cabfee662c05fa1100e12615ca83dff15d29ca438f597f40595432ce6d56e5eb",
+      "address": "0x4034a0",
+      "name": "FUN_004034a0",
+      "body": {
+        "available": true,
+        "provenance": "ghidra-function-body-address-set",
+        "ranges": [
+          {
+            "start": "0x4034a0",
+            "end": "0x40352d"
+          }
+        ],
+        "total_bytes": 142,
+        "span_bytes": 142,
+        "non_contiguous": false,
+        "contains_entry": true
+      }
+    }
+  ],
+  "bundles": [
+    {
+      "path": "/home/yvm/.cache/idm-analysis/main-focused/evidence-bundle.json",
+      "bytes": 319808,
+      "sha256": "6a580e50853121d5bbb37ce3dcafb123f7fc95a2dae43f99cd4a53d556d74352"
+    },
+    {
+      "path": "/home/yvm/.cache/idm-analysis/main-focused/analysis-snapshot.json",
+      "bytes": 332584,
+      "sha256": "304b0d0b8c3edf492b5bcc29ba43a3284e319d9053f1acc8e4ca6774967c5012"
+    },
+    {
+      "path": "/home/yvm/.cache/idm-analysis/msg-host-focused/evidence-bundle.json",
+      "bytes": 75153,
+      "sha256": "fda613517caadfda811c059b496b88a13c0fd851c0fde60870ad2f2ccb34c0a0"
+    },
+    {
+      "path": "/home/yvm/.cache/idm-analysis/msg-host-focused/analysis-snapshot.json",
+      "bytes": 87920,
+      "sha256": "83d05be0e8a28c9a44aef0d53d4c31947ecf747fe6bba73a3650017a7eb3ec46"
+    },
+    {
+      "path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/evidence-bundle.json",
+      "bytes": 311428,
+      "sha256": "2f799e41b4ba3abe255f7c7eaef4bd1c9a55a4d16a881351604f5d7eb06998de"
+    },
+    {
+      "path": "/home/yvm/.cache/idm-analysis/msg-host-ghidra/analysis-snapshot.json",
+      "bytes": 585285,
+      "sha256": "2fe9a5d278206f799db01165f5a825805e6782aa4db39409084eecad06dfedc9"
+    }
+  ],
+  "limits": [
+    "Native pseudocode is recovered analysis, not original source.",
+    "Local evidence files remain outside Git; rerun the supplied tool against the supplied artifacts to reproduce.",
+    "Main first-pass second full dossier exceeded MCP transport budget; focused pass completed via pseudocode-only queries.",
+    "Main first-pass records before the failed second dossier were retained individually; the completed focused sessions exported full bundles and closed successfully."
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "IDM Native Integration",
+  "version": "0.2.0",
+  "description": "Send downloads and detected video sources to the native Omarchy download manager.",
+  "permissions": [
+    "nativeMessaging",
+    "contextMenus",
+    "downloads",
+    "webRequest",
+    "cookies",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "IDM Native",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqoxHE54DauGFEeF+1IaUkEyfMdyBHpK0GtbuoClNGZKd1AKl/Ja9ULV8GtVtnW0BHD17S9VVupwyuSMEhl1o7+qrDdBPpKfTBDcbXxgf0km29wECxc/ynCJ0qyRRnt/GgJm+YJZIRP435xYrq5EeNq5Am4Y6b6/AluDlY+1naVbFD4tkoEk82kqCnYb3y5Hn9ZcIjpU07v7aQcCt9A360HTPg+t9ipp3hUD9NBbgxnrNm6SMBamZxloCGQAzLd8YadFFKhzkEmhggt8sAypx7Ar+mKdClsuQy1ICIJU1DjRjAucUJVFz8iu2xG+3toCbG75ZGgLqbqt++au3kIrOrQIDAQAB",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fonts/GeistPixel-Square.woff2"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ]
+}

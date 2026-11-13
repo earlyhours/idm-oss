@@ -1,0 +1,27 @@
+{
+  "ghidra": {
+    "version": "12.1.4",
+    "release_url": "https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.1.4_build",
+    "asset_url": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip",
+    "sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+    "published_sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+    "published_digest_verified": true,
+    "installation": "~/.cache/idm-analysis/ghidra_12.1.4_PUBLIC",
+    "license": "Apache-2.0 and bundled notices"
+  },
+  "rea": {
+    "version": "6.7.0",
+    "mode": "isolated stdio MCP process with process-local environment"
+  },
+  "java": {
+    "version": "21.0.2",
+    "max_heap": "2G"
+  },
+  "objdump": "GNU objdump (GNU Binutils) 2.47",
+  "boundary": {
+    "target_execution": false,
+    "paid_tools": false,
+    "client_configuration_edits": false,
+    "publisher_signature_verification": false
+  }
+}

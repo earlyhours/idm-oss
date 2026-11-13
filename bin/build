@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build"
+cd "$ROOT/build"
+python3 "$ROOT/browser/build.py" --output "$ROOT/build/browser"
+cp "$ROOT/tools/install_browser.py" "$ROOT/build/install-browser.py"
+qmake6 "$ROOT/idm-native.pro"
+make -j2

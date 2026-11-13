@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=IDM Native
+Name[da]=IDM Native
+Comment=Download files with parallel connections and resume
+Comment[da]=Hent filer med parallelle forbindelser og genoptagelse
+Exec=idm-native open
+Icon=idm-native
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=idm-native

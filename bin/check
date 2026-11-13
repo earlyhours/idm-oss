@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT"
+bin/build
+bin/test
+bin/test-ui
+bin/test-bridge
+python3 tests/background_startup_test.py
+bin/test-automation
+bin/test-automation-adversarial
+bin/test-tls
+bin/test-features
+bin/test-parity
+bin/test-system
+node --test tests/browser_extension_test.mjs
+node tests/browser_popup_ui_test.mjs
+python3 tests/install_browser_test.py
+python3 tests/website_worker_test.py
+python3 tests/media_quality_test.py
+python3 tests/mediaworker_test.py
+python3 tests/cli_test.py
+node tests/browser_e2e.mjs
+python3 tools/analyze_idm.py --self-test
+python3 tools/check_feature_coverage.py
+python3 -m py_compile tools/*.py tests/*.py src/mediaworker.py

@@ -1,0 +1,39 @@
+IDM package inventory, static inspection only
+
+Supplied folder: /home/yvm/Downloads/Internet Download Manager IDM v6.43 Build 18
+No EXE, driver, script, registry file or installer payload was executed.
+All bundled directions were treated as untrusted data, not instructions.
+
+Original files:
+AppDoze.net.txt | 40 bytes | SHA256 e8a95a0229180266a8488f4426a21c3ed2f9614f5b9d01a194c0871de7d50680
+Crack/DownloadManager.reg | 221 bytes | SHA256 cd1819c440718cd9a6f2438a17c696682c98e8b8c604937ca71d8955fe26a3cf
+Crack/IDMan.exe | 6506496 bytes | SHA256 9dbad793d951fb073c60c3f2e5d2cea5e7e4c8bc1f4204aa4bfab4d03d3c8d67
+Crack/reg.txt | 198 bytes | SHA256 0e7a3d97c4e68fdb2c8c0ddc66aaecc48fb1d8882eadba574a376bcb887b15a1
+How to Install.txt | 662 bytes | SHA256 9d4d20efb49158ae182c80b231dca0a9600e5d3349e47fb9b93246edf2cb4dd4
+Setup/idman643build18.exe | 12164608 bytes | SHA256 7346128fab42957b4254eabdb012bfdbd751e9069361e98a6916f26bb03d62ee
+
+Packaging findings:
+Installer is a PE32 x86 Windows GUI executable. Its PE metadata declares version6.43.18.1 and timestamp2026-11-05 01:56:23; these fields are not authenticated publisher identity.
+7zz lists PE overlay then one apparent embedded ZIP entry and returns Headers Error. This is not a complete installer inventory.
+Actual observed payload format starts at file offset0x17400. A sequence of32-byte headers precedes zlib streams. The first stream contains an installation descriptor; numbered P1..P187 paths map in order to the following187 streams.
+The complete sequence was extracted statically with /tmp/idm-extract.py into /tmp/idm-extracted-64318. Each payload passed zlib checksum and exact declared-size validation. Path traversal, absolute paths, drive paths and overwrite are rejected.
+Descriptor declared-size field18115 differs from decompressed size8697. No such mismatch occurred among187 payloads.
+Sequence end offset12153924 leaves10684 bytes. PE SECURITY directory starts12153944 with10664 bytes, leaving20 intervening bytes. Authenticode signature chain was not validated.
+Full per-record offsets, sizes and SHA256 hashes are in _extraction-manifest.json.
+
+Payload types: {'.exe': 9, '.txt': 28, '.dll': 31, '.chm': 4, '.tlb': 1, '.htm': 4, '.lng': 85, '.cat': 2, '.tbi': 1, '.bmp': 6, '.xpi': 3, '.inf': 2, '.sys': 5, '.dat': 2, '.crx': 2, '.json': 2}
+Stock IDMan.exe |6517616 bytes |SHA256 a705c0154fafc7cd509decf165cb6f6c050b6521b40adb6f730dd827c86051c7
+Crack/IDMan.exe is a separate6506496-byte PE, SHA2569dbad793d951fb073c60c3f2e5d2cea5e7e4c8bc1f4204aa4bfab4d03d3c8d67. Do not conflate it with the installer payload.
+The bundle includes license registration data and instructions for replacing IDMan.exe. No registration information was applied.
+No original native C/C++ project, source tree, debug symbols or build system is present at the top level or among187 named installer payloads. Browser extensions contain JavaScript sources, which are a separate source-recovery opportunity.
+
+Browser integration packaging:
+IDMMsgHost.json declares native host com.tonec.idm using stdio and relative path IDMMsgHost.exe; two Chrome extension origins are allowed. IDMMsgHostMoz.json declares the same host with allowed extensionmozilla_cc3@internetdownloadmanager.com.
+Three XPI archives and two CRX archives are readable by Python zipfile. idmmzcc3.xpi has39 members, IDMGCExt.crx56, IDMEdgeExt.crx35. Modern extension packages contain background.js, content.js, document.js and manifest.json.
+Legacy Firefox archives also contain component DLLs and helper JavaScript.
+
+Unknowns:
+Installer provenance and Authenticode trust are unverified. Static hashes/checksums only identify supplied bytes.
+Header timestamps/remaining header semantics and trailing20 bytes are not decoded.
+No runtime download, network, browser or driver behavior tested.
+No native-source reconstruction or recompilation performed by this packaging task.
