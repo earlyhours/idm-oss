@@ -219,7 +219,9 @@ ApplicationWindow {
         antivirusCheck.checked = !!preferences.antivirus
         darkCheck.checked = darkMode
         typeFilterInput.text = preferences.typeFilter || ""
-        completionChoice.currentIndex = ["none","shutdown","disconnect"].indexOf(preferences.completionAction || "none")
+        completionChoice.currentIndex = ["none","shutdown","disconnect","program"].indexOf(preferences.completionAction || "none")
+        completionProgram.text=(preferences.completionCommand || [])[0] || ""
+        completionArguments.text=(preferences.completionCommand || []).slice(1).join("\n")
         completionDelayInput.value = preferences.completionDelaySeconds || 30
         let command = preferences.scannerCommand || []
         scannerProgram.text = command.length ? command[0] : ""
@@ -280,7 +282,8 @@ ApplicationWindow {
             rateLimit:Number(rateInput.text),proxy:proxyInput.text,clipboardMonitor:clipboardCheck.checked,
             notifications:notificationsCheck.checked,sound:soundCheck.checked,antivirus:antivirusCheck.checked,
             scannerCommand:command,darkMode:darkCheck.checked,typeFilter:typeFilterInput.text,
-            completionAction:["none","shutdown","disconnect"][completionChoice.currentIndex],completionDelaySeconds:completionDelayInput.value}
+            completionCommand:completionProgram.text.trim() ? [completionProgram.text.trim()].concat(completionArguments.text.split("\n").filter(x => x.length)) : [],
+            completionAction:["none","shutdown","disconnect","program"][completionChoice.currentIndex],completionDelaySeconds:completionDelayInput.value}
         if (automationAvailable && !automation.configure(value)) { lastError = automation.error; return }
         defaultDirectory = value.directory; defaultConnections = value.connections; darkMode = value.darkMode
         optionsDialog.close()
@@ -1229,15 +1232,20 @@ ApplicationWindow {
                     }
                     }
                 }
-                ColumnLayout {
-                    spacing: 5
+                ScrollView {
+                    id: actionsScroll; clip: true; contentWidth: availableWidth; Layout.fillWidth: true; Layout.fillHeight: true
+                    ColumnLayout {
+                    width: actionsScroll.availableWidth; spacing: 5
                     AppCheckBox { id: antivirusCheck; text: qsTr("Scan completed files for viruses") }
                     RowLayout { visible: antivirusCheck.checked; Label { text: qsTr("Scanner program") } AppField { id: scannerProgram; Layout.fillWidth: true; placeholderText: "/usr/bin/clamdscan" } }
                     Label { visible: antivirusCheck.checked; text: qsTr("Scanner arguments, one per line. %f is the downloaded file."); font.pixelSize: 11; color: win.muted }
                     AppTextArea { visible: antivirusCheck.checked; id: scannerArguments; Layout.fillWidth: true; Layout.preferredHeight: 65; selectByMouse: true; placeholderText: "--\n%f" }
-                    RowLayout { Label { text: qsTr("After the queue finishes") } IdmComboBox { appWindow: win; id: completionChoice; model: [qsTr("Do nothing"),qsTr("Shut down computer"),qsTr("Disconnect network")] } }
+                    RowLayout { Label { text: qsTr("After the queue finishes") } IdmComboBox { appWindow: win; id: completionChoice; model: [qsTr("Do nothing"),qsTr("Shut down computer"),qsTr("Disconnect network"),qsTr("Run a program")] } }
+                    RowLayout { visible: completionChoice.currentIndex === 3; Label { text: qsTr("Program") } AppField { id: completionProgram; objectName: "completionProgram"; Layout.fillWidth: true; placeholderText: "/usr/bin/program" } }
+                    AppTextArea { visible: completionChoice.currentIndex === 3; id: completionArguments; objectName: "completionArguments"; Layout.fillWidth: true; Layout.preferredHeight: 54; placeholderText: qsTr("Arguments, one per line. No shell expansion.") }
                     RowLayout { visible: completionChoice.currentIndex > 0; Label { text: qsTr("Confirmation delay (seconds)") } IdmSpinBox { appWindow: win; id: completionDelayInput; from: 10; to: 3600 } }
                     Label { visible: completionChoice.currentIndex > 0; text: qsTr("Shutdown and network disconnect are opt-in. Cancel pending actions in the notification bar."); font.pixelSize: 11; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                }
                 }
                 ColumnLayout {
                     Label { text: win.bridgeAvailable ? qsTr("Native browser bridge is ready.") : qsTr("Native browser bridge is not connected."); font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }

@@ -438,6 +438,47 @@ private slots:
           1);
     }
   }
+  void completionProgramRunsAfterDownloadsAndCanBeCancelled() {
+    SyncServer server;QTemporaryDir temp;
+    const auto state=temp.path()+"/state", marker=temp.path()+"/completed.txt";
+    DownloadManager manager(state);Automation a(&manager,state);
+    QVERIFY(!a.configure({{"completionAction","program"}}));
+    QVERIFY(a.configure({{"directory",temp.path()+"/out"},{"notifications",false},{"sound",false},
+      {"completionAction","program"},{"completionDelaySeconds",5},
+      {"completionCommand",QStringList{"/usr/bin/python3","-c","import pathlib,sys;pathlib.Path(sys.argv[1]).write_text('completed')",marker}}}));
+    const auto id=a.enqueue({{"url",server.url()}});QVERIFY(!id.isEmpty());
+    QTRY_VERIFY(!a.completionNotice().isEmpty());
+    a.cancelCompletionAction();QTest::qWait(5100);QVERIFY(!QFile::exists(marker));
+    const auto next=a.enqueue({{"url",server.url()+"?second"}});QVERIFY(!next.isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(read(marker),QByteArray("completed"),8000);
+  }
+  void failedProjectPreparationDoesNotConsumeItsScheduledInterval() {
+    SyncServer server; QTemporaryDir temp;
+    const auto directory=temp.path()+"/out";
+    write(directory,"blocking file");
+    DownloadManager manager(temp.path()+"/state");
+    Automation a(&manager,temp.path()+"/state",nullptr,quiet());
+    auto job=project(server,directory);job["intervalMinutes"]=525600;
+    QVERIFY(a.configure({{"fileSyncJobs",QVariantList{job}}}));
+    a.checkSchedules();
+    QVERIFY(a.preferences()["fileSyncJobs"].toList().first().toMap()["nextRun"].toString().isEmpty());
+    QVERIFY(QFile::remove(directory));
+    a.checkSchedules();
+    QTRY_COMPARE_WITH_TIMEOUT(a.syncQueue().first().toMap()["status"].toString(),QString("complete"),5000);
+    QCOMPARE(read(directory+"/file.bin"),QByteArray("version one"));
+  }
+  void cancellationRemovesPrivateJobAndFlushesReceivedQuota() {
+    SyncServer server;server.body=QByteArray(1024*1024,'x');server.slow=true;
+    QTemporaryDir temp;const auto state=temp.path()+"/state";
+    DownloadManager manager(state);Automation a(&manager,state,nullptr,quiet());
+    QVERIFY(a.configure({{"fileSyncJobs",QVariantList{project(server,temp.path()+"/out")}}}));
+    a.checkSchedules();
+    QTRY_VERIFY_WITH_TIMEOUT(a.quota()["usedBytes"].toLongLong()>0,5000);
+    a.cancelMirror();
+    QVERIFY(!QFile::exists(state+"/website-job.json"));
+    const auto saved=QJsonDocument::fromJson(read(state+"/automation.json")).object();
+    QCOMPARE(saved.value("quota").toObject().value("usedBytes").toVariant().toLongLong(),a.quota()["usedBytes"].toLongLong());
+  }
   void rejectsMalformedNewConfigurationWithoutChangingSavedSettings() {
     SyncServer server;
     QTemporaryDir temp;

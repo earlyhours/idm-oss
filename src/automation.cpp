@@ -177,9 +177,17 @@ QString validatePreferences(QVariantMap &values) {
   }
   if (!QFileInfo(values.value("directory").toString()).isAbsolute())
     return QObject::tr("Download directory must be an absolute path.");
-  if (!QStringList{"none", "shutdown", "disconnect"}.contains(
+  if (!QStringList{"none", "shutdown", "disconnect", "program"}.contains(
           values.value("completionAction").toString()))
     return QObject::tr("Unsupported completion action.");
+  const auto command = values.value("completionCommand");
+  if ((command.metaType().id() != QMetaType::QStringList && command.metaType().id() != QMetaType::QVariantList) || command.toList().size() > 64)
+    return QObject::tr("Completion command must be a list of at most 64 arguments.");
+  for (const auto &argument : command.toList())
+    if (argument.metaType().id() != QMetaType::QString || argument.toString().size() > 4096 || argument.toString().contains(QChar(0)))
+      return QObject::tr("Invalid completion command argument.");
+  if (values.value("completionAction") == "program" && (command.toStringList().isEmpty() || command.toStringList().first().trimmed().isEmpty()))
+    return QObject::tr("Choose a program to run after completion.");
   if (values.value("siteSettings").metaType().id() != QMetaType::QVariantMap)
     return QObject::tr("Site settings must be a map of full origins.");
   QVariantMap sites;
@@ -237,6 +245,7 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
               {"antivirus", false},
               {"scannerCommand", QStringList{"clamscan", "--no-summary", "%f"}},
               {"completionAction", "none"},
+              {"completionCommand", QStringList{}},
               {"completionDelaySeconds", 30},
               {"darkMode", true},
               {"typeFilter", ""},
@@ -1098,6 +1107,8 @@ void Automation::completionAction() {
     command = {"systemctl", "poweroff"};
   else if (action == "disconnect")
     command = {"nmcli", "networking", "off"};
+  else if (action == "program")
+    command = settings.value("completionCommand").toStringList();
   else
     return;
   execute(command, [this](int code, const QString &error) {
@@ -1247,13 +1258,16 @@ bool Automation::updateQuota() {
   }
   quotaState["lastReceived"] = current;
   quotaState["usedBytes"] = used;
-  if (quotaState != previous || accountingDirty) {
+  if (quotaState != previous || accountingDirty ||
+      (workerAccountingDirty && now.toMSecsSinceEpoch() - workerCheckpointAt >= 1000)) {
     if (!save()) {
       quotaState = previous;
       accountingDirty = true;
       return false;
     }
     accountingDirty = false;
+    workerAccountingDirty = false;
+    workerCheckpointAt = now.toMSecsSinceEpoch();
   }
   return true;
 }
@@ -1299,19 +1313,16 @@ void Automation::checkProjects() {
       const auto previous = projectResults.value(list + "/" + key).toMap();
       const bool quotaRetry = previous.value("status") == "quotaPaused" ||
                               previous.value("status") == "downloading" ||
-                              previous.value("status") == "interrupted";
+                              previous.value("status") == "interrupted" ||
+                              previous.value("status") == "startFailed";
       const int interval =
           job.value("intervalMinutes", list == "fileSyncJobs" ? 1 : 0).toInt();
-      if ((start.isValid() && start > now) ||
+      const auto retryAt = QDateTime::fromString(previous.value("retryAt").toString(), Qt::ISODate);
+      if ((previous.value("status") == "startFailed" && retryAt > now) ||
+          (start.isValid() && start > now) ||
           (!quotaRetry && next.isValid() && next > now) ||
           (!quotaRetry && interval == 0 && previous.contains("lastRun")))
         continue;
-      if (interval > 0)
-        job["nextRun"] = now.addSecs(interval * 60).toString(Qt::ISODate);
-      projects[n] = job;
-      settings[list] = projects;
-      if (!save())
-        return;
       QVariantMap request{{"url", job.value("url")},
                           {"directory", job.value("directory")}};
       if (list == "fileSyncJobs") {
@@ -1323,6 +1334,10 @@ void Automation::checkProjects() {
         request["exclude"] = job.value("exclude", QVariantList{});
       }
       if (startWorker(request, list, key)) {
+        if (interval > 0)
+          job["nextRun"] = now.addSecs(interval * 60).toString(Qt::ISODate);
+        projects[n] = job;
+        settings[list] = projects;
         projectResults[list + "/" + key] = QVariantMap{
             {"status", "downloading"}, {"lastRun", now.toString(Qt::ISODate)}};
         save();
@@ -1334,22 +1349,21 @@ void Automation::checkProjects() {
   }
 }
 void Automation::finishProject(const QString &status) {
-  if (workerKey.isEmpty() && status != "quotaPaused" &&
-      status != "interrupted") {
+  if (workerKey.isEmpty() && status != "quotaPaused" && status != "interrupted")
     pendingMirror.clear();
-    save();
-  }
   if (!workerKey.isEmpty()) {
     auto result = projectResults.value(workerList + "/" + workerKey).toMap();
     result["status"] = status;
     result["error"] = mirrorState.value("error");
     result["transferredBytes"] = workerTransferred;
     result["unchanged"] = mirrorState.value("unchanged", false);
+    if (status == "startFailed")
+      result["retryAt"] = QDateTime::currentDateTime().addSecs(settings.value("retryDelaySeconds").toInt()).toString(Qt::ISODate);
     projectResults[workerList + "/" + workerKey] = result;
     workerKey.clear();
     workerList.clear();
-    save();
   }
+  if (!save()) accountingDirty = true;
 }
 void Automation::readWorkerOutput(QProcess *process, QByteArray &buffer) {
   buffer.append(process->readAllStandardOutput());
@@ -1363,11 +1377,7 @@ void Automation::readWorkerOutput(QProcess *process, QByteArray &buffer) {
       quotaState["usedBytes"] = quotaState.value("usedBytes").toLongLong() +
                                 transferred - workerTransferred;
       workerTransferred = transferred;
-      if (!save()) {
-        accountingDirty = true;
-        process->kill();
-        mirrorState["error"] = tr("Cannot persist download quota accounting.");
-      }
+      workerAccountingDirty = true;
     }
     if (event.contains("error"))
       mirrorState["error"] = event.value("error").toString();
@@ -1494,10 +1504,11 @@ bool Automation::startWorker(QVariantMap job, const QString &list,
             if (error == QProcess::FailedToStart) {
               mirrorState["status"] = "error";
               mirrorState["error"] = process->errorString();
-              finishProject("error");
+              finishProject("startFailed");
               if (mirrorProcess == process)
                 mirrorProcess = nullptr;
               process->deleteLater();
+              QFile::remove(state + "/website-job.json");
               emit changed();
             }
           });
@@ -1523,6 +1534,7 @@ void Automation::cancelWorker(const QString &status) {
   QByteArray buffer;
   readWorkerOutput(process, buffer);
   process->deleteLater();
+  QFile::remove(state + "/website-job.json");
   mirrorState["status"] = status;
   finishProject(status);
   emit changed();

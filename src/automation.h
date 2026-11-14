@@ -76,7 +76,8 @@ private:
   QProcess *mirrorProcess = nullptr;
   Executor executor;
   bool pending = false, reconciling = false;
-  bool settingsWritable = true, accountingDirty = false;
+  bool settingsWritable = true, accountingDirty = false, workerAccountingDirty = false;
+  qint64 workerCheckpointAt = 0;
   qint64 lastRate = -1;
   bool save();
   bool updateQuota();

@@ -250,13 +250,22 @@ class Mirror:
     def load_manifest(self):
         if self.manifest_path.exists():
             data = json.loads(self.manifest_path.read_text())
-            if data.get('version') != 1 or data.get('url') != self.url or not isinstance(data.get('resources'), dict) or not isinstance(data.get('managed'), dict):
+            if data.get('version') != 1 or not isinstance(data.get('resources'), dict) or not isinstance(data.get('managed'), dict):
                 raise ValueError('Output directory has a different or invalid website manifest')
             for name, hashes in data['managed'].items():
                 self.path(name)
                 if not isinstance(hashes, list) or not hashes or len(hashes) > 2 or any(not isinstance(h, str) or not re.fullmatch(r'[0-9a-f]{64}', h) for h in hashes):
                     raise ValueError('Website manifest contains invalid managed-file hashes')
             self.manifest = data
+            if data.get('url') != self.url:
+                if self.mode != 'file' or self.file_hash() is None:
+                    raise ValueError('Output directory has a different or invalid website manifest')
+                partial = self.path(self.manifest_name.removesuffix('.json') + '.part')
+                if partial.exists():
+                    raise ValueError('Finish the pending synchronization before changing its URL, or choose a new filename')
+                self.manifest.update(url=self.url, origin=list(self.selected), resources={})
+                self.manifest.pop('partial', None)
+                self.save()
 
     @staticmethod
     def number(job, name, default, low, high):

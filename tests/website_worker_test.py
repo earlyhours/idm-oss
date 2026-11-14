@@ -328,6 +328,19 @@ class WebsiteTests(unittest.TestCase):
     def file_manifest(self):
         return json.loads(next(self.output.glob('.idm-file-*.json')).read_text())
 
+    def test_completed_file_project_can_change_url_without_adopting_user_edits(self):
+        self.assertEqual(self.file_sync(2000)[0], 0)
+        self.file_body = b'new URL content'
+        code, rows = self.run_worker('/resumable-other', mode='file', filename='payload.bin')
+        self.assertEqual(code, 0, rows)
+        self.assertEqual((self.output / 'payload.bin').read_bytes(), b'new URL content')
+        (self.output / 'payload.bin').write_bytes(b'user edit')
+        before = len(self.requests)
+        code, rows = self.file_sync(2000)
+        self.assertEqual(code, 1, rows)
+        self.assertEqual(len(self.requests), before)
+        self.assertEqual((self.output / 'payload.bin').read_bytes(), b'user edit')
+
     def test_streamed_file_budget_can_exceed_the_website_memory_budget(self):
         code, rows = self.file_sync(2000, maxBytes=2 * 1024 ** 3)
         self.assertEqual(code, 0, rows)
