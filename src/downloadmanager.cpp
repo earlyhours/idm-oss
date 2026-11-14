@@ -23,9 +23,13 @@
 #include <QTimer>
 #include <QUuid>
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
+
+extern "C" int idm_copy_fd(int input, int output, std::uint64_t length);
 
 namespace {
 bool httpUrl(const QUrl &url) {
@@ -336,14 +340,17 @@ struct DownloadManager::Impl {
         return std::min<qint64>(65536,qint64(j->tokens));
     }
     void write(const std::shared_ptr<Job> &j, const std::shared_ptr<Part> &p, QNetworkReply *r) {
+        std::array<char, 65536> buffer;
         while (r->bytesAvailable() > 0) {
             const auto allowed = allowance(j); if(allowed <= 0) return;
-            const auto bytes = r->read(std::min<qint64>(allowed,r->bytesAvailable()));
-            if(j->rateLimitBytes>0)j->tokens-=bytes.size();
-            if (j->ranged && bytes.size() > p->last - p->first + 1 - p->bytes) { fail(j,q->tr("Server sent more bytes than the requested range.")); return; }
-            const qint64 written = p->file->write(bytes);
+            const qint64 size = r->read(buffer.data(), std::min<qint64>(allowed,r->bytesAvailable()));
+            if (size < 0) { fail(j,r->errorString()); return; }
+            if (size == 0) return;
+            if(j->rateLimitBytes>0)j->tokens-=size;
+            if (j->ranged && size > p->last - p->first + 1 - p->bytes) { fail(j,q->tr("Server sent more bytes than the requested range.")); return; }
+            const qint64 written = p->file->write(buffer.data(), size);
             if (written > 0) { p->bytes += written; p->activity.restart(); }
-            if (written != bytes.size()) { fail(j,q->tr("Cannot write download: %1").arg(p->file->errorString())); return; }
+            if (written != size) { fail(j,q->tr("Cannot write download: %1").arg(p->file->errorString())); return; }
         }
     }
     void finish(const std::shared_ptr<Job> &j) {
@@ -364,11 +371,7 @@ struct DownloadManager::Impl {
             if(!good)break;
             QFile source(partPath(*j,i));
             if (QFileInfo(source.fileName()).isSymLink() || !source.open(QIODevice::ReadOnly) || source.size() != j->parts[i]->bytes) { good = false; break; }
-            while (!source.atEnd()) {
-                auto bytes = source.read(65536);
-                if (bytes.isEmpty() && source.error() != QFileDevice::NoError) { good = false; break; }
-                if (output.write(bytes) != bytes.size()) { good = false; break; }
-            }
+            good = idm_copy_fd(source.handle(), output.handle(), std::uint64_t(j->parts[i]->bytes)) == 0;
         }
         good = good && output.size() == received(*j) && output.flush() && ::fsync(output.handle()) == 0;
         output.close();
@@ -390,7 +393,7 @@ struct DownloadManager::Impl {
         req.setRawHeader("Range","bytes="+QByteArray::number(first)+"-"+QByteArray::number(p->last)); req.setRawHeader("If-Range",j->validator);
         auto r = get(j,req); p->reply=r; p->checked=false; p->activity.start();
         r->setReadBufferSize(j->rateLimitBytes > 0 ? std::max<qint64>(1,std::min<qint64>(65536,j->rateLimitBytes/j->connections)) : 65536);
-        auto timer = new QTimer(q);p->timer=timer;timer->setInterval(20);
+        auto timer = new QTimer(q);p->timer=timer;timer->setInterval(j->rateLimitBytes > 0 ? 20 : 250);
         auto consume = [this,j,p,r,first,timer] {
             if(j->status!="downloading" || p->reply!=r)return;
             if(r->isFinished() && r->error()!=QNetworkReply::NoError){fail(j,r->errorString());return;}
@@ -522,7 +525,7 @@ struct DownloadManager::Impl {
         auto r = get(j,req); j->probe = r; r->setReadBufferSize(65536);
         auto probeBody = std::make_shared<QByteArray>();
         auto serial = std::make_shared<bool>(false);
-        auto timer=new QTimer(q);j->probeTimer=timer;timer->setInterval(20);
+        auto timer=new QTimer(q);j->probeTimer=timer;timer->setInterval(j->rateLimitBytes > 0 ? 20 : 250);
         auto consume = [this,j,r,probeBody,serial,timer] {
             if(j->probe!=r)return;
             const int status = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -592,7 +595,7 @@ struct DownloadManager::Impl {
         auto p=std::make_shared<Part>();j->parts={p};if(!openPart(j,0,false))return;
         j->ranged=false;j->total=-1;j->status="downloading";j->baseline=0;j->clock.start();p->activity.start();
         r->setReadBufferSize(j->rateLimitBytes>0?std::max<qint64>(1,std::min<qint64>(65536,j->rateLimitBytes)):65536);
-        auto timer=new QTimer(q);j->probeTimer=timer;timer->setInterval(20);
+        auto timer=new QTimer(q);j->probeTimer=timer;timer->setInterval(j->rateLimitBytes > 0 ? 20 : 250);
         auto consume=[this,j,p,r,timer] {
             if(j->probe!=r || j->status!="downloading")return;
             if(!p->checked) {

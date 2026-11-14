@@ -3,6 +3,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 bin/build
+cargo test --locked --offline --manifest-path native-io/Cargo.toml --target-dir build/native-io
 bin/test
 bin/test-ui
 bin/test-desktop

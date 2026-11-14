@@ -2,7 +2,7 @@
 
 # IDM Native
 
-A native Omarchy download manager with IDM's familiar menus, toolbar, category tree, download table and transfer dialogs. Browser capture, HLS/DASH media, queues, scheduling, proxies, authentication, website mirroring and completion actions are implemented independently in C++/Qt and free local tools.
+A native Omarchy download manager with IDM's familiar menus, toolbar, category tree, download table and transfer dialogs. Browser capture, HLS/DASH media, queues, scheduling, proxies, authentication, website mirroring and completion actions are implemented independently in C++/Qt, Rust and free local tools.
 
 The source is MIT licensed. Linux-specific conveniences include native Qt controls, Arch packaging, a JSON command line, headless operation and reproducible local-server tests.
 
@@ -151,6 +151,30 @@ bin/install
 Runtime tools are free: Qt 6, Python, yt-dlp, FFmpeg, curl, ClamAV, libnotify, libcanberra and NetworkManager. Media capture loads either the installed `yt_dlp` Python module or the standalone Unix ZIP executable, with Python environment overrides disabled. No paid analysis engine or service is required. ClamAV needs signature definitions before scanning; initialize or update them with `sudo freshclam`. The development machine's official definitions were updated and tested.
 
 The implementation uses Qt/C++ conventions for Omarchy. The [investigation](docs/reverse-engineering/README.md) records evidence from the supplied IDM installer, including recovered request/response and browser-helper routines. The original Windows native source was not recovered or recompiled.
+
+## Rust file I/O and performance work
+
+The desktop and HTTP transport remain native C++/Qt. File assembly now calls a
+small, dependency-free Rust static library in `native-io`. Linux
+`copy_file_range` can avoid copying file contents through userspace; unsupported
+filesystems use a reused 128 KiB buffer. Publication still checks the final size,
+fsyncs staging, and refuses to replace an existing destination. Network reads
+reuse a fixed buffer, and unrestricted transfers poll timeouts four times per
+second while continuing to process data as it arrives.
+
+Building now requires Cargo and Rust 1.85 or later, in addition to Qt and the
+existing tools. `bin/build` and every engine test target build and link the Rust
+library automatically, offline. Arch packaging and CI include the Rust compiler.
+No Rust toolchain is needed to run the resulting executable.
+
+Run the Rust checks with
+`cargo test --locked --offline --manifest-path native-io/Cargo.toml`.
+For larger controlled transfers, run
+`python3 tests/download_comparison.py --size-mib 16 --rounds 3`.
+The optional `--binary PATH` measures a specific application executable.
+See [the performance audit](docs/performance-audit.md) for remaining bottlenecks
+and measurement limits. These changes do not establish a universal download
+speed advantage or complete the Rust migration.
 
 ## Desktop workflow
 

@@ -6,3 +6,5 @@ INCLUDEPATH += ../src
 HEADERS += ../src/downloadmanager.h ../src/automation.h
 SOURCES += feature_snapshot_tests.cpp ../src/downloadmanager.cpp ../src/automation.cpp
 RESOURCES += ../src/resources.qrc
+
+include(../native-io.pri)

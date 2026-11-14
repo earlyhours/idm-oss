@@ -5,3 +5,5 @@ TARGET = tls_tests
 INCLUDEPATH += ../src
 HEADERS += ../src/downloadmanager.h
 SOURCES += tls_tests.cpp ../src/downloadmanager.cpp
+
+include(../native-io.pri)

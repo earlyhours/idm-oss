@@ -6,3 +6,5 @@ INCLUDEPATH += ../src
 HEADERS += ../src/downloadmanager.h ../src/automation.h
 SOURCES += final_parity_tests.cpp ../src/downloadmanager.cpp ../src/automation.cpp
 RESOURCES += ../src/resources.qrc
+
+include(../native-io.pri)

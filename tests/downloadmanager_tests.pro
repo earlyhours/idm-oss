@@ -8,3 +8,5 @@ HEADERS += ../src/downloadmanager.h
 SOURCES += downloadmanager_tests.cpp ../src/downloadmanager.cpp
 
 RESOURCES += ../src/resources.qrc
+
+include(../native-io.pri)

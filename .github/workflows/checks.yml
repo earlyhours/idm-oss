@@ -6,10 +6,12 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install free build tools
-        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2 krb5
+        run: pacman -Syu --noconfirm git rust qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2 krb5
       - uses: actions/checkout@v4
       - name: Build
         run: bin/build
+      - name: Rust file I/O
+        run: cargo test --locked --offline --manifest-path native-io/Cargo.toml --target-dir build/native-io
       - name: Transfer engine
         run: bin/test
       - name: Desktop interface

@@ -13,3 +13,5 @@ SOURCES += ../src/portalpicker.cpp
 
 HEADERS += ../src/automation.h
 SOURCES += ../src/automation.cpp
+
+include(../native-io.pri)

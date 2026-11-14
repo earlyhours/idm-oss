@@ -3,3 +3,4 @@
 /pkgbuild/src/
 *.pkg.tar.*
 __pycache__/
+/native-io/target/

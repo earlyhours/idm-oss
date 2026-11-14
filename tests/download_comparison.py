@@ -16,6 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PAYLOAD = bytes(range(256)) * 8192
 DIGEST = hashlib.sha256(PAYLOAD).hexdigest()
+BINARY = ROOT / "build/idm-native"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -95,7 +96,7 @@ def download(url, client, destination, state):
         command = ["curl", "--fail", "--location", "--silent", "--show-error",
                    "--connect-timeout", "15", "--max-time", "120", "--output", str(target), url]
     else:
-        command = [str(ROOT / "build/idm-native"), "download", url, "--directory", str(destination),
+        command = [str(BINARY), "download", url, "--directory", str(destination),
                    "--state-directory", str(state), "--connections", client.rsplit("-", 1)[1], "--json"]
     started = time.monotonic()
     result = subprocess.run(command, capture_output=True, text=True, timeout=150)
@@ -113,11 +114,19 @@ def download(url, client, destination, state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--binary", type=Path, default=ROOT / "build/idm-native", help="Application executable to measure")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--size-mib", type=int, default=2, help="Controlled payload size in MiB (1-128)")
     parser.add_argument("--public-url", help="Optional public file fetched by every client; timings include Internet variability")
     args = parser.parse_args()
     if not 1 <= args.rounds <= 10:
         parser.error("rounds must be between 1 and 10")
+    if not 1 <= args.size_mib <= 128:
+        parser.error("size-mib must be between 1 and 128")
+    global PAYLOAD, DIGEST, BINARY
+    BINARY = args.binary.resolve()
+    PAYLOAD = bytes(range(256)) * (args.size_mib * 4096)
+    DIGEST = hashlib.sha256(PAYLOAD).hexdigest()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -125,8 +134,10 @@ def main():
     clients = ["curl", "idm-native-1", "idm-native-4"]
     report = {"measuredAt": datetime.now(timezone.utc).isoformat(),
               "baseline": "curl default single connection with redirects and HTTP failures enabled",
-              "originalWindowsIdmTested": False, "rounds": args.rounds,
+              "originalWindowsIdmTested": False, "rounds": args.rounds, "payloadMiB": args.size_mib,
               "platform": platform.platform(),
+              "binarySha256": hashlib.sha256(BINARY.read_bytes()).hexdigest(),
+              "workingTreeDirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()),
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "curlVersion": subprocess.check_output(["curl", "--version"], text=True).splitlines()[0],
               "scenarios": []}
@@ -159,7 +170,7 @@ def main():
             collision.mkdir()
             original = collision / "fast.bin"
             original.write_bytes(b"user-owned data")
-            result = subprocess.run([str(ROOT / "build/idm-native"), "download",
+            result = subprocess.run([str(BINARY), "download",
                                      f"http://127.0.0.1:{server.server_port}/fast.bin", "--directory", str(collision),
                                      "--state-directory", str(root / "collision-state"), "--json"],
                                     capture_output=True, text=True, timeout=30)

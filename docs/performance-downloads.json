@@ -1,0 +1,381 @@
+{
+  "measuredAt": "2026-11-14T07:32:50.886030+00:00",
+  "baseline": "curl default single connection with redirects and HTTP failures enabled",
+  "originalWindowsIdmTested": false,
+  "rounds": 3,
+  "payloadMiB": 16,
+  "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+  "sourceCommit": "d1d645267402c0d3e5145d8df0837d89bc6645a8",
+  "curlVersion": "curl 8.23.0 (x86_64-pc-linux-gnu) libcurl/8.23.0 OpenSSL/3.6.5 zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 nghttp2/1.70.0 ngtcp2/1.25.0 nghttp3/1.18.0 mit-krb5/1.22.2",
+  "scenarios": [
+    {
+      "name": "fast.bin",
+      "url": "local fixture",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.013394,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.013773,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.013394,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.010939,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.083722,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.093479,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.080486,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.083722,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.132948,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.132948,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.136724,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.073574,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "per-connection-limit.bin",
+      "url": "local fixture",
+      "clients": {
+        "curl": {
+          "medianSeconds": 8.0843,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 8.0843,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 8.084543,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 8.076413,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 8.141505,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 8.141505,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 8.133719,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 8.177056,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 2.081048,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 2.080308,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 2.085084,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 2.081048,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "no-range.bin",
+      "url": "local fixture",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.018584,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.026447,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.018584,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.014331,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.08284,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.126124,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.08284,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.080989,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.082566,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.08237,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.082566,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.085493,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "unknown-size.bin",
+      "url": "local fixture",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.018007,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.019156,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.018007,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.012881,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.110803,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.124582,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.092833,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.110803,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.084486,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.084486,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.07797,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.104465,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "redirect",
+      "url": "local fixture",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.015236,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.016729,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.015236,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.013696,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.154297,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.154297,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.155033,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.152921,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.226439,
+          "bytes": 16777216,
+          "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1",
+          "samples": [
+            {
+              "seconds": 0.284577,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.226439,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            },
+            {
+              "seconds": 0.207562,
+              "bytes": 16777216,
+              "sha256": "341aacac661ccb210720bedaa9ead5d668fe5ea41a73532fc147c71e34040df1"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    }
+  ],
+  "collisionPreservesExistingFile": true,
+  "workingTreeDirty": true,
+  "binarySha256": "f7be39fada36a7349c0cda721bf83e5437287cd6708a5d77ca255ccb677b2c8c",
+  "notes": "Measured candidate build based on sourceCommit with this performance patch applied; local fixture only; no original Windows IDM comparison."
+}

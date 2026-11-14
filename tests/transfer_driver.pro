@@ -8,3 +8,5 @@ INCLUDEPATH += ../src
 HEADERS += ../src/downloadmanager.h
 SOURCES += transfer_driver.cpp ../src/downloadmanager.cpp
 RESOURCES += ../src/resources.qrc
+
+include(../native-io.pri)

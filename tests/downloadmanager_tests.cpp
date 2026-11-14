@@ -358,6 +358,21 @@ private slots:
         QVERIFY2(row(m)["error"].toString().startsWith("Cannot load yt-dlp") || row(m)["error"].toString().startsWith("Media capture failed"),qPrintable(row(m)["error"].toString()));
         QVERIFY(!QFile::exists(row(m)["path"].toString()));
     }
+    void largeFilePublication_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::newRow("range") << QString("range");
+        QTest::newRow("serial") << QString("serial");
+    }
+    void largeFilePublication() {
+        QFETCH(QString,mode);Server s;s.mode=mode;
+        const auto block=s.body;for(int i=0;i<15;++i)s.body+=block;
+        QTemporaryDir dir;DownloadManager m(dir.path()+"/state");
+        const auto id=m.add(s.url(),dir.path()+"/out",4);QVERIFY(!id.isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(row(m)["status"].toString(),QString("complete"),15000);
+        QCOMPARE(contents(row(m)["path"].toString()),s.body);
+        QCOMPARE(row(m)["received"].toLongLong(),qint64(s.body.size()));
+        QVERIFY(!QFile::exists(row(m)["path"].toString()+".idm-native-"+id+".tmp"));
+    }
     void rateLimitsDrainRangeAndSerialWithoutTruncation_data() {QTest::addColumn<QString>("mode");QTest::newRow("range")<<QString("range");QTest::newRow("serial")<<QString("serial");}
     void rateLimitsDrainRangeAndSerialWithoutTruncation() {
         QFETCH(QString,mode);Server s;s.mode=mode;s.body.resize(65536);QTemporaryDir dir;DownloadManager m(dir.path()+"/state");QElapsedTimer clock;clock.start();
