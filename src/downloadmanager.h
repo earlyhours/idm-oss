@@ -18,6 +18,8 @@ public:
     QString error() const;
     QString downloadDirectory() const;
     Q_INVOKABLE QString add(const QString &url, const QString &directory = {}, int connections = 4);
+    // authMethod: auto/basic/digest/ntlm/negotiate/kerberos; proxy.type: http/https/socks5.
+    // Negotiate/Kerberos use the system GSS credential cache; no TLS verification bypass.
     Q_INVOKABLE QString addRequest(const QVariantMap &request);
     Q_INVOKABLE void pause(const QString &id);
     Q_INVOKABLE void resume(const QString &id);

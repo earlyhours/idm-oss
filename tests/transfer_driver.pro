@@ -1,0 +1,10 @@
+QT += core network
+QT -= gui
+CONFIG += c++17 console
+CONFIG -= app_bundle
+TEMPLATE = app
+TARGET = transfer_driver
+INCLUDEPATH += ../src
+HEADERS += ../src/downloadmanager.h
+SOURCES += transfer_driver.cpp ../src/downloadmanager.cpp
+RESOURCES += ../src/resources.qrc
