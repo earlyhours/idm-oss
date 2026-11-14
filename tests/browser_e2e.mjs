@@ -82,7 +82,7 @@ try {
       response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="intercept.m3u8"','Content-Length':bytes.length});
       let sent=0;const timer=setInterval(()=>{if(response.destroyed){clearInterval(timer);return;}response.write(bytes.subarray(sent,sent+8));sent+=8;if(sent>=bytes.length){clearInterval(timer);response.end();}},25);return;
     }
-    if(url.pathname==='/download.bin'||url.pathname==='/fallback.bin'){
+    if(url.pathname==='/download.bin'||url.pathname==='/fallback.bin'||url.pathname==='/selected.bin'){
       nativeFileRequests++;response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="${url.pathname.slice(1)}"`,'Content-Length':payload.length});
       let sent=0;const timer=setInterval(()=>{if(response.destroyed){clearInterval(timer);return;}response.write(payload.subarray(sent,sent+4096));sent+=4096;if(sent>=payload.length){clearInterval(timer);response.end();}},10);return;
     }
@@ -133,6 +133,19 @@ try {
   assert(protectedMedia.manifests>=2,'Protected HLS must be requested by the browser and native worker');
   assert(protectedMedia.segments>0,'Native HLS segments must retain custom authorization context');
   assert.equal(protectedMedia.denied,0,'Protected media lost its captured X-Api-Key or Bearer context');
+  await cdp.evaluate(page, `(() => {
+    const container=document.createElement('div');container.id='selection-fixture';
+    container.innerHTML='<a href="/selected.bin">Selected file</a><a href="/selected.bin">Duplicate</a><a href="javascript:void(0)">Invalid</a>';
+    document.body.append(container);
+    const outside=document.createElement('a');outside.href='/unselected-missing.bin';outside.textContent='Unselected';document.body.append(outside);
+    const range=document.createRange();range.selectNodeContents(container);
+    const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+  })()`);
+  const selectedLinks=await cdp.evaluate(popup, `new Promise(resolve=>chrome.tabs.sendMessage(${tabId},{type:'links',selectedOnly:true},{frameId:0},resolve))`);
+  assert.deepEqual(selectedLinks.urls,[origin+'/selected.bin'],'Real DOM selection must exclude unselected, invalid and duplicate links');
+  assert.equal((await send({type:'batch',...selectedLinks})).ok,true);
+  const selectedJob=await completed(origin+'/selected.bin');assert.deepEqual(await readFile(selectedJob.path),payload);
+  await cdp.evaluate(page, 'window.getSelection().removeAllRanges()');
   const recaptureUrl=origin+'/recapture.bin', beforeRecapture=(await queue()).length;
   const expiredStatus=await cdp.evaluate(page,`fetch(${JSON.stringify(recaptureUrl)},{cache:'no-store',headers:{'X-Api-Key':'fixture-expired-key',Authorization:'Bearer fixture-expired-token'}}).then(r=>r.status)`);
   assert.equal(expiredStatus,403,'The first browser request must really contain expired context');

@@ -15,7 +15,7 @@ function worker() {
   const nativeCalls=[], cancellations=[], menus=[], statuses=[], storage={}, sent=[], cookieReads=[];
   const api={runtime:{id:extensionId,lastError:undefined,onInstalled:event(),onMessage:event()},
     webRequest:{onBeforeSendHeaders:event(),onHeadersReceived:event()},
-    tabs:{onRemoved:event(),onUpdated:event(),get(id,callback){callback({id,url:'https://page.test/watch',title:'Fixture page'});},sendMessage(id,message,callback){sent.push({id,message});callback?.({ok:true,urls:['https://files.test/a.zip','https://files.test/b.pdf'],pageUrl:'https://page.test/watch',title:'Links'});}},
+    tabs:{onRemoved:event(),onUpdated:event(),get(id,callback){callback({id,url:'https://page.test/watch',title:'Fixture page'});},sendMessage(id,message,options,callback){if(typeof options==='function'){callback=options;options=undefined;}sent.push({id,message,...(options?{options}:{})});callback?.({ok:true,urls:['https://files.test/a.zip','https://files.test/b.pdf'],pageUrl:'https://page.test/watch',title:'Links'});}},
     action:{setBadgeText(value){statuses.push(value.text);},setTitle(){}},
     contextMenus:{onClicked:event(),removeAll(callback){callback();},create(menu){menus.push(menu);}},
     cookies:{getAllCookieStores(callback){callback([{id:'regular-store',tabIds:[7]}]);},getAll(details,callback){cookieReads.push(plain(details));callback([{name:'session',value:'cookie-value'}]);}},
@@ -262,7 +262,7 @@ function page(baseURI="https://page.test/watch", extraLinks=[]){
   const chrome={runtime:{lastError:undefined,onMessage:{addListener(fn){listeners.push(fn);}},sendMessage(message,callback){calls.push(plain(message));callback(message.type==='download'?{ok:true,id:'media-id'}:{ok:true,sources:[{url:'https://media.test/master.m3u8',label:'Network HLS',mime:'application/vnd.apple.mpegurl'}],showPanel:true,panelPosition:'right'});}}};
   const window={};window.top=window;
   vm.runInNewContext(content,{document,window,location:{href:'https://page.test/watch'},chrome,URL,setTimeout,clearTimeout,MutationObserver:class{observe(){}}},{filename:'content.js'});
-  return{document,html,video,calls,listeners};
+  return{document,html,video,calls,listeners,window,anchors};
 }
 test('real content-script controls detect sources, hand off selected quality and expose status',()=>{
   const p=page(),elements=descendants(p.html);
@@ -295,4 +295,22 @@ test('blob player still shows network manifest choices instead of handing off a 
  test('YouTube network fragments never become standalone download choices',async()=>{
   const w=worker();w.response('https://rr1.googlevideo.com/videoplayback?id=fragment','video/mp4');
   assert.deepEqual((await w.message({type:'sources',tabId:7})).sources,[]);
+ });
+
+ test('selected links menu targets the clicked frame and passes only explicit selection requests',async()=>{
+  const w=worker();w.api.runtime.onInstalled.listeners[0]();
+  assert(w.menus.some(menu=>menu.id==='idm-native-selection'&&menu.contexts.includes('selection')));
+  w.api.contextMenus.onClicked.listeners[0]({menuItemId:'idm-native-selection',frameId:9},{id:7,title:'Page',url:'https://page.test/watch'});
+  await flush();
+  assert.deepEqual(plain(w.sent.find(call=>call.message.type==='links')),{id:7,message:{type:'links',selectedOnly:true},options:{frameId:9}});
+  assert.equal(w.nativeCalls[0].message.command,'batch');
+ });
+ test('selected links collection excludes unselected anchors, deduplicates and validates',()=>{
+  const p=page();
+  p.window.getSelection=()=>({isCollapsed:false,rangeCount:1,getRangeAt:()=>({intersectsNode:link=>link.href!=='https://files.test/b.pdf'})});
+  let result;p.listeners[0]({type:'links',selectedOnly:true},{},response=>{result=plain(response);});
+  assert.deepEqual(result.urls,['https://files.test/a.zip']);
+  p.window.getSelection=()=>({isCollapsed:true});
+  p.listeners[0]({type:'links',selectedOnly:true},{},response=>{result=plain(response);});
+  assert.deepEqual(result.urls,[]);
  });

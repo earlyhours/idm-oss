@@ -20,6 +20,7 @@ python3 tests/website_worker_test.py
 python3 tests/media_quality_test.py
 python3 tests/mediaworker_test.py
 python3 tests/cli_test.py
+python3 tests/download_comparison.py --rounds 1
 node tests/browser_e2e.mjs
 python3 tools/analyze_idm.py --self-test
 python3 tools/check_feature_coverage.py

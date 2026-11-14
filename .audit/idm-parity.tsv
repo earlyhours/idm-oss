@@ -1,0 +1,5 @@
+ts	phase	decision	why	evidence	result
+2026-11-14T04:55:22.225882+00:00	frame	Implement documented gaps in separate transfer, automation and desktop units	Avoid overlapping edits and require behavior tests for each claim	docs/final-feature-audit.md	open
+2026-11-14T04:58:27Z	comparison	Compared curl and the app on five controlled cases and a public Python archive	Verify actual bytes and retain unfavorable timing results too	docs/download-comparison.json	All hashes matched; parallelism helped the per-connection throttle but was slower on the public file
+2026-11-14T04:58:27Z	browser	Added explicit selected-links downloads with frame-scoped selection	Original IDM supports downloading selected links and the clone only handled all page links	tests/browser_extension_test.mjs	23 browser unit tests passed; real browser check running
+2026-11-14T04:59:35Z	browser	Verified selected-link capture through real Chromium and native file output	Selection mocks alone cannot prove real DOM selection and native handoff	tests/browser_e2e.mjs	Real Chromium E2E passed

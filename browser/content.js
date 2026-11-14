@@ -108,7 +108,16 @@
     if (message?.type === 'sources-updated') { send({ type: 'sources' }, update); respond({ ok: true }); }
     else if (message?.type === 'rescan') { detect(); respond({ ok: true }); }
     else if (message?.type === 'links') {
-      const links = [...new Set([...document.querySelectorAll('a[href]')].map(link => http(link.href)).filter(Boolean))];
+      const selection = message.selectedOnly ? window.getSelection() : null;
+      const anchors = [...document.querySelectorAll('a[href]')].filter(link => {
+        if (!message.selectedOnly) return true;
+        if (!selection || selection.isCollapsed) return false;
+        for (let i = 0; i < selection.rangeCount; i++) {
+          if (selection.getRangeAt(i).intersectsNode(link)) return true;
+        }
+        return false;
+      });
+      const links = [...new Set(anchors.map(link => http(link.href)).filter(Boolean))];
       respond({ ok: true, urls: links.slice(0, 100), truncated: links.length > 100, pageUrl: http(location.href), title: document.title });
     }
     return false;

@@ -194,11 +194,12 @@
       chrome.contextMenus.create({ id: 'idm-native-media', title: 'Download this video/audio with IDM', contexts: ['video', 'audio'] });
       chrome.contextMenus.create({ id: 'idm-native-page', title: 'Download page with IDM', contexts: ['page'] });
       chrome.contextMenus.create({ id: 'idm-native-links', title: 'Download all links with IDM', contexts: ['page'] });
+      chrome.contextMenus.create({ id: 'idm-native-selection', title: 'Download selected links with IDM', contexts: ['selection'] });
     });
   });
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'idm-native-links') {
-      chrome.tabs.sendMessage(tab?.id, {type: 'links'}, response => {
+    if (['idm-native-links', 'idm-native-selection'].includes(info.menuItemId)) {
+      chrome.tabs.sendMessage(tab?.id, {type: 'links', selectedOnly: info.menuItemId === 'idm-native-selection'}, {frameId: info.frameId ?? 0}, response => {
         const error = chrome.runtime.lastError;
         if (error || !response?.ok) return setStatus(tab?.id ?? -1, 'Reload the page after enabling the extension to collect its links.', true);
         batch(tab.id, response, tab).then(() => { if (response.truncated) setStatus(tab.id, 'Added the first 100 page links. More links were omitted.'); })

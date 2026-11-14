@@ -6,6 +6,105 @@ A native Omarchy download manager with IDM's familiar menus, toolbar, category t
 
 The [70-feature ledger](docs/features.json) maps each requested capability to code, behavior tests and evidence. [The independent audit](docs/final-feature-audit.md) explains the coverage and limits. A pass means the documented behavior was tested, not every possible site or feature combination.
 
+## Feature checklist and comparison
+
+The checklist below records the project's tested behavior. The original 70 requested capabilities are narrower than every feature of Windows IDM. Checked items do not imply identical behavior on every site or operating system. See the [implementation plan](docs/parity-plan.md), [per-feature evidence](docs/final-feature-audit.md), and [comparison samples](docs/download-comparison.json).
+
+<details>
+<summary>Original 70 requested capabilities and their behavioral tests</summary>
+
+- [x] Multithreaded Downloading. [Test](tests/downloadmanager_tests.cpp).
+- [x] Dynamic File Segmentation. [Test](tests/downloadmanager_tests.cpp).
+- [x] Download Acceleration. [Test](tests/downloadmanager_tests.cpp).
+- [x] Automatic Browser Integration. [Test](tests/browser_extension_test.mjs).
+- [x] One-Click Download Capture. [Test](tests/browser_extension_test.mjs).
+- [x] Video Download Detection. [Test](tests/browser_extension_test.mjs).
+- [x] Floating Video Download Panel. [Test](tests/browser_extension_test.mjs).
+- [x] Streaming Video Downloading. [Test](tests/downloadmanager_tests.cpp).
+- [x] HLS (M3U8) Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] MPEG-DASH Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] Video Quality Selection. [Test](tests/downloadmanager_tests.cpp).
+- [x] Pause and Resume Downloads. [Test](tests/downloadmanager_tests.cpp).
+- [x] Interrupted Download Recovery. [Test](tests/downloadmanager_tests.cpp).
+- [x] Automatic Download Retry. [Test](tests/automation_tests.cpp).
+- [x] Expired Download Link Refresh. [Test](tests/downloadmanager_tests.cpp).
+- [x] Download Scheduling. [Test](tests/automation_tests.cpp).
+- [x] Download Queues. [Test](tests/automation_tests.cpp).
+- [x] Batch Downloading. [Test](tests/automation_tests.cpp).
+- [x] Multiple Simultaneous Downloads. [Test](tests/automation_tests.cpp).
+- [x] Download Speed Limiting. [Test](tests/downloadmanager_tests.cpp).
+- [x] Download Priority Management. [Test](tests/automation_tests.cpp).
+- [x] Automatic File Categorization. [Test](tests/downloadmanager_tests.cpp).
+- [x] Custom Download Directories. [Test](tests/downloadmanager_tests.cpp).
+- [x] Clipboard URL Monitoring. [Test](tests/automation_tests.cpp).
+- [x] Drag-and-Drop Downloads. [Test](tests/ui_tests.cpp).
+- [x] Right-Click Context Menu Integration. [Test](tests/browser_extension_test.mjs).
+- [x] Download All Links on a Page. [Test](tests/browser_extension_test.mjs).
+- [x] Website Grabber. [Test](tests/website_worker_test.py).
+- [x] Recursive Website Downloading. [Test](tests/website_worker_test.py).
+- [x] Offline Website Mirroring. [Test](tests/website_worker_test.py).
+- [x] HTTP/HTTPS Support. [Test](tests/tls_tests.cpp).
+- [x] FTP Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] Proxy Server Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] SOCKS Proxy Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] Authenticated Downloads. [Test](tests/downloadmanager_tests.cpp).
+- [x] Browser Cookie Integration. [Test](tests/browser_extension_test.mjs).
+- [x] HTTP Referer Support. [Test](tests/downloadmanager_tests.cpp).
+- [x] Custom HTTP Headers. [Test](tests/downloadmanager_tests.cpp).
+- [x] User-Agent Customization. [Test](tests/downloadmanager_tests.cpp).
+- [x] Automatic Antivirus Scanning. [Test](tests/system_integration_test.py).
+- [x] Download Completion Notifications. [Test](tests/system_integration_test.py).
+- [x] Automatic Shutdown After Downloads. [Test](tests/system_integration_test.py).
+- [x] Automatic Hang-Up After Downloads. [Test](tests/system_integration_test.py).
+- [x] Command-Line Integration. [Test](tests/cli_test.py).
+- [x] Download History. [Test](tests/automation_tests.cpp).
+- [x] Download Progress Monitoring. [Test](tests/downloadmanager_tests.cpp).
+- [x] Real-Time Download Speed Display. [Test](tests/downloadmanager_tests.cpp).
+- [x] Estimated Download Time. [Test](tests/downloadmanager_tests.cpp).
+- [x] Multiple Connection Management. [Test](tests/downloadmanager_tests.cpp).
+- [x] Connection Timeout Handling. [Test](tests/downloadmanager_tests.cpp).
+- [x] Automatic Connection Reuse. [Test](tests/downloadmanager_tests.cpp).
+- [x] Speed Limiter Scheduler. [Test](tests/automation_tests.cpp).
+- [x] Download Queue Automation. [Test](tests/automation_tests.cpp).
+- [x] Periodic Website Synchronization. [Test](tests/website_worker_test.py).
+- [x] Duplicate Download Detection. [Test](tests/automation_tests.cpp).
+- [x] Download File Renaming. [Test](tests/downloadmanager_tests.cpp).
+- [x] Download Confirmation Dialog. [Test](tests/ui_tests.cpp).
+- [x] Download Progress Dialog. [Test](tests/ui_tests.cpp).
+- [x] Browser Download Interception. [Test](tests/browser_extension_test.mjs).
+- [x] Custom File Type Filtering. [Test](tests/browser_extension_test.mjs).
+- [x] Download Panel Customization. [Test](tests/browser_extension_test.mjs).
+- [x] Multilingual Interface. [Test](tests/ui_tests.cpp).
+- [x] Dark Mode. [Test](tests/ui_tests.cpp).
+- [x] Sound Notifications. [Test](tests/system_integration_test.py).
+- [x] Keyboard Shortcuts. [Test](tests/ui_tests.cpp).
+- [x] Download List Import/Export. [Test](tests/automation_tests.cpp).
+- [x] Automatic Download Start. [Test](tests/automation_tests.cpp).
+- [x] Download Completion Actions. [Test](tests/system_integration_test.py).
+- [x] Site-Specific Download Settings. [Test](tests/automation_tests.cpp).
+- [x] HTTPS Download Support with SSL/TLS. [Test](tests/tls_tests.cpp).
+
+</details>
+
+Additional parity work covers file synchronization queues, transfer quotas, scheduled grabber projects, authentication and proxy coverage, FTP recovery, desktop customization, login startup, update checking and selected page links. These are being verified separately from the older 70-item ledger.
+
+The reproducible comparison runs ordinary curl, IDM Native with one connection, and IDM Native with four connections against the same files. It checks exact SHA-256 hashes, alternates execution order over three trials, and includes executable startup and final file publication in elapsed time. It also checks that an existing local file remains unchanged when the app downloads a file with the same name.
+
+| Scenario | Ordinary curl | Native, 1 connection | Native, 4 connections | Final bytes |
+|---|---:|---:|---:|---|
+| Local, unthrottled | 0.006 s | 0.068 s | 0.096 s | Identical SHA-256 |
+| Local, 2 MiB/s per connection | 1.016 s | 1.067 s | 0.323 s | Identical SHA-256 |
+| Server ignores Range | 0.006 s | 0.075 s | 0.083 s | Identical SHA-256 |
+| Unknown Content-Length | 0.006 s | 0.068 s | 0.092 s | Identical SHA-256 |
+| HTTP redirect | 0.008 s | 0.096 s | 0.140 s | Identical SHA-256 |
+| Public Python 3.13.0 source archive | 8.396 s | 6.940 s | 8.920 s | Identical SHA-256 |
+
+These are medians from this machine, not measurements against original Windows IDM. Parallelism helps a server that limits each connection; startup overhead makes the app slower for tiny local transfers. The public result includes Internet and server variability and does not show a universal speed advantage. The public archive was downloaded by every client, three times each.
+
+Practical benefits over an ordinary one-shot download include persistent queues, validator-checked HTTP resume, automatic safe destination naming, private browser request capture and decoded media validation. These behaviors have local tests; no claim that they outperform Windows IDM follows from the curl comparison.
+
+Reproduce the controlled comparison with `python3 tests/download_comparison.py --output build/download-comparison.json`. Add `--public-url https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz` to repeat the public download. `bin/check` runs one trial per controlled scenario; public-network benchmarks are opt-in.
+
 ## Build, run and install
 
 ```sh
