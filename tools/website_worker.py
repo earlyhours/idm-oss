@@ -318,23 +318,26 @@ class Mirror:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            self.path(path.relative_to(self.root).as_posix())
-            if owned is not None:
-                if path.exists():
-                    if not path.is_file():
-                        raise ValueError('Managed synchronization target is not a regular file')
-                    with path.open('rb') as stream:
-                        actual = hashlib.file_digest(stream, 'sha256').hexdigest()
-                    if actual not in owned:
-                        raise ValueError('Refusing to overwrite an unrelated or modified file: ' + path.name)
-                else:
-                    # Hard-link creation cannot clobber a file created while downloading.
-                    os.link(temporary, path)
-                    return
-            os.replace(temporary, path)
+            self.publish(temporary, path, owned)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+    def publish(self, temporary, path, owned):
+        self.path(path.relative_to(self.root).as_posix())
+        if owned is not None:
+            if path.exists():
+                if not path.is_file():
+                    raise ValueError('Managed synchronization target is not a regular file')
+                with path.open('rb') as stream:
+                    actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+                if actual not in owned:
+                    raise ValueError('Refusing to overwrite an unrelated or modified file: ' + path.name)
+            else:
+                # Hard-link creation cannot clobber a file created while downloading.
+                os.link(temporary, path)
+                return
+        os.replace(temporary, path)
 
     def save(self):
         self.atomic(self.path(self.manifest_name), (json.dumps(self.manifest, ensure_ascii=False, indent=2) + '\n').encode())
@@ -473,18 +476,210 @@ class Mirror:
         finally:
             os.close(lock)
 
+    def file_hash(self):
+        path = self.path(self.filename)
+        if not path.exists():
+            return None
+        if not path.is_file():
+            raise ValueError('Managed synchronization target is not a regular file')
+        with path.open('rb') as stream:
+            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if actual not in self.manifest['managed'].get(self.filename, []):
+            raise ValueError('Refusing to overwrite an unrelated or modified file: ' + self.filename)
+        return actual
+
+    @staticmethod
+    def strong_etag(value):
+        return isinstance(value, str) and len(value) <= 2048 and bool(re.fullmatch(r'"[\x21\x23-\x7e\x80-\xff]*"', value))
+
+    def restart_file(self, path, reason):
+        self.manifest.pop('partial', None)
+        path.unlink(missing_ok=True)
+        self.save()
+        raise ValueError(reason + '; partial discarded, next run will restart')
+
     def sync_file(self):
         previous = self.manifest['resources'].get(self.url)
         if previous and previous.get('path') != self.filename:
             raise ValueError('File synchronization manifest has a different output')
-        data, content_type, etag, modified, final_url, status = self.fetch(self.url)
-        self.managed_write(self.filename, data)
-        self.manifest['resources'][self.url] = {
-            'path': self.filename, 'rawPath': self.filename, 'rawSha256': digest(data),
-            'contentType': content_type, 'etag': etag, 'lastModified': modified, 'finalUrl': final_url}
+        actual = self.file_hash()
+        if actual is not None and self.path(self.filename).stat().st_size > self.max_bytes:
+            raise ValueError('Cached website source exceeds byte budget')
+        partial_path = self.path(self.manifest_name.removesuffix('.json') + '.part')
+        partial = self.manifest.get('partial')
+        headers = dict(self.headers)
+        headers_hash = digest(json.dumps(headers, sort_keys=True).encode())
+        # Byte ranges refer to the identity representation, never a decoded body.
+        headers = {name: value for name, value in headers.items() if name.lower() != 'accept-encoding'}
+        headers['Accept-Encoding'] = 'identity'
+        offset = 0
+        hasher = hashlib.sha256()
+        if partial is not None:
+            if (not isinstance(partial, dict) or
+                    type(partial.get('size')) is not int or type(partial.get('total')) is not int or
+                    not 0 <= partial['size'] <= partial['total'] <= self.max_bytes or
+                    not self.strong_etag(partial.get('etag')) or
+                    partial.get('headersSha256') != headers_hash or
+                    not isinstance(partial.get('sha256'), str) or
+                    not re.fullmatch(r'[0-9a-f]{64}', partial['sha256']) or
+                    canonical(partial.get('finalUrl')) != partial.get('finalUrl') or
+                    not partial.get('finalUrl') or origin(partial['finalUrl']) != self.selected or
+                    any(not isinstance(partial.get(key), str) for key in ('contentType', 'lastModified'))):
+                self.restart_file(partial_path, 'Cannot safely resume invalid or changed file identity')
+            if not partial_path.is_file():
+                self.restart_file(partial_path, 'Cannot safely resume a missing partial file')
+            info = partial_path.stat()
+            if info.st_uid != os.getuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o077:
+                raise ValueError('Synchronization partial must be a private, owned regular file')
+            if info.st_size != partial['size']:
+                self.restart_file(partial_path, 'Cannot safely resume a modified partial file')
+            with partial_path.open('rb') as stream:
+                hasher = hashlib.file_digest(stream, 'sha256')
+            if hasher.hexdigest() != partial['sha256']:
+                self.restart_file(partial_path, 'Cannot safely resume a modified partial file')
+            offset = partial['size']
+        elif partial_path.exists():
+            raise ValueError('Untracked synchronization partial; remove it before restarting')
+        if partial and offset == partial['total']:
+            return self.finish_file(partial_path, partial, previous, 206)
+        if partial:
+            if not self.transfer_limit:
+                raise QuotaExceeded('Download quota exhausted; waiting for the next period')
+            end = min(partial['total'] - 1, offset + self.transfer_limit - 1)
+            headers['Range'] = f'bytes={offset}-{end}'
+            headers['If-Range'] = partial['etag']
+        elif previous and actual is not None and actual == previous.get('rawSha256'):
+            if previous.get('etag'): headers['If-None-Match'] = previous['etag']
+            if previous.get('lastModified'): headers['If-Modified-Since'] = previous['lastModified']
+        try:
+            response = self.opener.open(Request(self.url, headers=headers), timeout=self.timeout)
+        except HTTPError as error:
+            if error.code == 304 and not partial and previous and actual is not None and actual == previous.get('rawSha256'):
+                if self.file_hash() != actual:
+                    raise ValueError('Managed synchronization target changed during conditional request')
+                emit('complete', ok=True, files=1, bytes=self.path(self.filename).stat().st_size,
+                     transferredBytes=0, status=304, unchanged=True, entry=str(self.path(self.filename)))
+                return 0
+            if partial and error.code in (304, 412, 416):
+                self.restart_file(partial_path, 'Server rejected conditional range resume')
+            raise ValueError(f'HTTP {error.code} while fetching {display_url(self.url)}') from error
+        with response:
+            final_url = canonical(response.url)
+            if not final_url or origin(final_url) != self.selected:
+                raise ValueError('Response escaped the selected origin')
+            lengths = response.headers.get_all('Content-Length', [])
+            if len(lengths) > 1 or (lengths and not re.fullmatch(r'[0-9]+', lengths[0])):
+                self.restart_file(partial_path, 'Invalid Content-Length for file synchronization')
+            length = int(lengths[0]) if lengths else None
+            etags = response.headers.get_all('ETag', [])
+            etag = etags[0] if len(etags) == 1 else ''
+            modified = response.headers.get('Last-Modified', '')
+            etag, modified = [value if len(value) <= 2048 and not re.search(r'[\r\n\x00]', value) else ''
+                              for value in (etag, modified)]
+            encodings = response.headers.get_all('Content-Encoding', [])
+            encoding = encodings[0].strip().lower() if encodings else ''
+            if len(encodings) > 1 or encoding not in ('', 'identity'):
+                self.restart_file(partial_path, 'Server ignored identity encoding; cannot safely resume encoded files')
+            if partial:
+                ranges = response.headers.get_all('Content-Range', [])
+                match = re.fullmatch(r'bytes ([0-9]+)-([0-9]+)/([0-9]+)', ranges[0]) if len(ranges) == 1 else None
+                if response.status != 206:
+                    self.restart_file(partial_path, 'Server ignored Range or the resource changed; cannot safely resume')
+                if etag != partial['etag'] or final_url != partial['finalUrl']:
+                    self.restart_file(partial_path, 'Remote resource identity changed during resume')
+                if (not match or tuple(map(int, match.groups())) != (offset, end, partial['total']) or
+                        (length is not None and length != end - offset + 1)):
+                    self.restart_file(partial_path, 'Invalid Content-Range for conditional file resume')
+                expected = end - offset + 1
+                total = partial['total']
+            else:
+                if response.status != 200 or response.headers.get('Content-Range'):
+                    raise ValueError('Expected a complete HTTP 200 file response')
+                expected = total = length
+            if total is not None and total > self.max_bytes:
+                raise ValueError('Website byte budget exceeded')
+            if not self.transfer_limit:
+                raise QuotaExceeded('Download quota exhausted; waiting for the next period')
+            state = dict(size=offset, total=total, sha256=hasher.hexdigest(), etag=etag,
+                         headersSha256=headers_hash, finalUrl=final_url,
+                         contentType=response.headers.get('Content-Type', ''),
+                         lastModified=modified)
+            resumable = total is not None and self.strong_etag(etag)
+            if resumable and not partial:
+                # An interrupted first write must leave metadata that rejects unverified bytes.
+                self.manifest['partial'] = state
+                self.save()
+            flags = os.O_WRONLY | os.O_NOFOLLOW | (os.O_APPEND if partial else os.O_CREAT | os.O_EXCL)
+            descriptor = os.open(partial_path, flags, 0o600)
+            received = 0
+            complete = False
+            try:
+                with os.fdopen(descriptor, 'ab' if partial else 'wb') as stream:
+                    try:
+                        while expected is None or received < expected:
+                            remaining = self.transfer_limit - self.transferred
+                            if remaining <= 0:
+                                if not resumable:
+                                    raise ValueError('Cannot safely resume without a strong ETag and Content-Length; restart with a larger quota')
+                                raise QuotaExceeded('Download quota exhausted; partial saved for the next period')
+                            chunk = response.read(min(65536, remaining, self.max_bytes - offset - received + 1,
+                                                      expected - received if expected is not None else 65536))
+                            if not chunk:
+                                if expected is not None:
+                                    raise ValueError('Incomplete file response; no truncated file was published')
+                                total = offset + received
+                                break
+                            self.transferred += len(chunk)
+                            if self.report_transfer:
+                                emit('transfer', transferredBytes=self.transferred)
+                            if offset + received + len(chunk) > self.max_bytes:
+                                raise ValueError('Website byte budget exceeded')
+                            stream.write(chunk)
+                            hasher.update(chunk)
+                            received += len(chunk)
+                        complete = offset + received == total
+                    finally:
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                        state.update(size=offset + received, total=total, sha256=hasher.hexdigest())
+                        if resumable:
+                            self.manifest['partial'] = state
+                            self.save()
+            finally:
+                if not resumable and not complete:
+                    partial_path.unlink(missing_ok=True)
+            if not complete:
+                raise QuotaExceeded('Download quota exhausted; partial saved for the next period')
+            try:
+                return self.finish_file(partial_path, state, previous, response.status)
+            finally:
+                if not resumable:
+                    partial_path.unlink(missing_ok=True)
+
+    def finish_file(self, partial_path, state, previous, status):
+        actual = self.file_hash()
+        expected = state['sha256']
+        self.path(partial_path.relative_to(self.root).as_posix())
+        if state['size'] != state['total'] or partial_path.stat().st_size != state['total']:
+            self.restart_file(partial_path, 'Incomplete synchronization partial cannot be published')
+        with partial_path.open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
+                self.restart_file(partial_path, 'Modified synchronization partial cannot be published')
+        # Persist ownership intent before the atomic publication, as for website writes.
+        self.manifest['managed'][self.filename] = list(dict.fromkeys([expected] + ([actual] if actual else [])))
         self.save()
-        emit('complete', ok=True, files=1, bytes=len(data), transferredBytes=self.transferred,
-             status=status, unchanged=status == 304 or bool(previous and previous.get('rawSha256') == digest(data)),
+        if actual != expected:
+            self.publish(partial_path, self.path(self.filename), [actual] if actual else [])
+        partial_path.unlink(missing_ok=True)
+        self.manifest['managed'][self.filename] = [expected]
+        self.manifest.pop('partial', None)
+        self.manifest['resources'][self.url] = {
+            'path': self.filename, 'rawPath': self.filename, 'rawSha256': expected,
+            'contentType': state['contentType'], 'etag': state['etag'],
+            'lastModified': state['lastModified'], 'finalUrl': state['finalUrl']}
+        self.save()
+        emit('complete', ok=True, files=1, bytes=state['size'], transferredBytes=self.transferred,
+             status=status, unchanged=bool(previous and previous.get('rawSha256') == expected),
              entry=str(self.path(self.filename)))
         return 0
 

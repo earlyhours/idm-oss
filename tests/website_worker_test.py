@@ -24,6 +24,9 @@ class WebsiteTests(unittest.TestCase):
         self.requests = []
         self.external_requests = []
         self.version = 1
+        self.file_body = bytes(range(256)) * 3 + b'exact tail'
+        self.range_behavior = 'normal'
+        self.on_file_request = None
         owner = self
 
         class External(BaseHTTPRequestHandler):
@@ -39,6 +42,42 @@ class WebsiteTests(unittest.TestCase):
             def do_GET(self):
                 owner.requests.append((self.path, dict(self.headers)))
                 route = urlsplit(self.path).path
+                if route == '/resumable' and owner.range_behavior == 'redirect':
+                    self.send_response(302); self.send_header('Location', '/resumable-other'); self.end_headers(); return
+                if route in ('/resumable', '/resumable-other'):
+                    if owner.on_file_request:
+                        owner.on_file_request()
+                    body = owner.file_body
+                    etag = f'"file-{owner.version}"'
+                    modified = 'Mon, 01 Jun 2026 00:00:00 GMT'
+                    if self.headers.get('If-None-Match') == etag:
+                        self.send_response(304); self.end_headers(); return
+                    start, end = 0, len(body) - 1
+                    ranged = self.headers.get('Range') and self.headers.get('If-Range') == etag
+                    if owner.range_behavior == 'ignore': ranged = False
+                    if ranged:
+                        start, end = map(int, self.headers['Range'].removeprefix('bytes=').split('-'))
+                    self.send_response(206 if ranged else 200)
+                    if ranged:
+                        value = f'bytes {start}-{end}/{len(body)}'
+                        if owner.range_behavior.startswith('range:'):
+                            value = owner.range_behavior.removeprefix('range:')
+                        self.send_header('Content-Range', value)
+                    if owner.range_behavior != 'no-length':
+                        self.send_header('Content-Length', str(end - start + 1))
+                    if owner.range_behavior != 'no-etag':
+                        returned_etag = '"unexpected"' if owner.range_behavior == 'changed-etag' else etag
+                        self.send_header('ETag', 'W/' + returned_etag if owner.range_behavior == 'weak' else returned_etag)
+                    self.send_header('Last-Modified', modified)
+                    self.send_header('Content-Type', 'application/octet-stream')
+                    self.end_headers()
+                    payload = body[start:end + 1]
+                    if owner.range_behavior == 'truncate': payload = payload[:max(1, len(payload) // 2)]
+                    try:
+                        self.wfile.write(payload)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    return
                 if route in ('/jump', '/external-jump'):
                     self.send_response(302)
                     self.send_header('Location', '/index' if route == '/jump' else owner.external_url + '/secret')
@@ -79,7 +118,13 @@ class WebsiteTests(unittest.TestCase):
                 modified = 'Mon, 01 Jun 2026 00:00:00 GMT'
                 if (etag and self.headers.get('If-None-Match') == etag) or (not etag and self.headers.get('If-Modified-Since') == modified):
                     self.send_response(304); self.end_headers(); return
-                self.send_response(200)
+                ranged = self.headers.get('Range') and self.headers.get('If-Range') == etag
+                total = len(body)
+                if ranged:
+                    start, end = map(int, self.headers['Range'].removeprefix('bytes=').split('-'))
+                    body = body[start:end + 1]
+                self.send_response(206 if ranged else 200)
+                if ranged: self.send_header('Content-Range', f'bytes {start}-{end}/{total}')
                 self.send_header('Content-Type', mime)
                 self.send_header('Content-Length', str(len(body)))
                 if compressed: self.send_header('Content-Encoding', 'gzip')
@@ -272,10 +317,224 @@ class WebsiteTests(unittest.TestCase):
         self.assertFalse((self.output / 'photo.png').exists())
         code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png', transferLimit=100)
         self.assertEqual(code, 0, rows)
-        self.assertEqual(rows[-1]['transferredBytes'], len((self.output / 'photo.png').read_bytes()))
+        self.assertEqual(rows[-1]['transferredBytes'], len((self.output / 'photo.png').read_bytes()) - 5)
         code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png', transferLimit=0)
         self.assertEqual(code, 0, rows)
         self.assertEqual(rows[-1]['transferredBytes'], 0)
+
+    def file_sync(self, budget=100, **extra):
+        return self.run_worker('/resumable', mode='file', filename='payload.bin', transferLimit=budget, **extra)
+
+    def file_manifest(self):
+        return json.loads(next(self.output.glob('.idm-file-*.json')).read_text())
+
+    def test_file_resumes_across_real_worker_restarts_with_bounded_private_partials(self):
+        target = self.output / 'payload.bin'
+        total = 0
+        for offset in range(0, len(self.file_body), 100):
+            code, rows = self.file_sync()
+            spent = min(100, len(self.file_body) - offset)
+            total += spent
+            self.assertEqual(max(row.get('transferredBytes', 0) for row in rows), spent, rows)
+            headers = self.requests[-1][1]
+            if offset:
+                self.assertEqual(headers.get('Range'), f'bytes={offset}-{offset + spent - 1}')
+                self.assertEqual(headers.get('If-Range'), '"file-1"')
+                self.assertNotIn('If-None-Match', headers)
+            if total < len(self.file_body):
+                self.assertEqual(code, 2, rows)
+                self.assertFalse(target.exists())
+                partial = next(self.output.glob('*.part'))
+                self.assertEqual(partial.read_bytes(), self.file_body[:total])
+                self.assertEqual(partial.stat().st_mode & 0o077, 0)
+                state = self.file_manifest()['partial']
+                self.assertEqual(state['size'], total)
+                self.assertEqual(state['sha256'], hashlib.sha256(self.file_body[:total]).hexdigest())
+            else:
+                self.assertEqual(code, 0, rows)
+        self.assertEqual(target.read_bytes(), self.file_body)
+        self.assertEqual(list(self.output.glob('*.part')), [])
+        self.assertNotIn('partial', self.file_manifest())
+        code, rows = self.file_sync(0)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['status'], 304)
+        self.assertEqual(rows[-1]['transferredBytes'], 0)
+
+    def test_changed_remote_validator_discards_old_partial_before_restart(self):
+        code, rows = self.file_sync()
+        self.assertEqual(code, 2, rows)
+        self.version = 2
+        self.file_body = b'new generation ' * 13
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('restart', rows[-1]['error'])
+        self.assertFalse((self.output / 'payload.bin').exists())
+        self.assertEqual(list(self.output.glob('*.part')), [])
+        for _ in range(2):
+            code, rows = self.file_sync()
+        self.assertEqual(code, 0, rows)
+        self.assertEqual((self.output / 'payload.bin').read_bytes(), self.file_body)
+
+    def test_ignored_range_reports_restart_and_never_publishes_partial(self):
+        self.assertEqual(self.file_sync()[0], 2)
+        self.range_behavior = 'ignore'
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('ignored Range', rows[-1]['error'])
+        self.assertIn('restart', rows[-1]['error'])
+        self.assertFalse((self.output / 'payload.bin').exists())
+        self.assertEqual(list(self.output.glob('*.part')), [])
+        self.assertEqual(max(row.get('transferredBytes', 0) for row in rows), 0)
+
+    def test_malicious_content_ranges_are_rejected_before_appending(self):
+        total = len(self.file_body)
+        for value in (f'bytes 0-199/{total}', f'bytes 101-199/{total}', f'bytes 100-200/{total}',
+                      f'bytes 100-199/{total + 1}', f'bytes 199-100/{total}', 'bytes 100-199/*',
+                      f'bytes -100-199/{total}', f'bytes 100-199/{total}, 200-299/{total}'):
+            with self.subTest(value=value):
+                self.output = self.root / hashlib.sha256(value.encode()).hexdigest()
+                self.range_behavior = 'normal'
+                self.assertEqual(self.file_sync()[0], 2)
+                self.range_behavior = 'range:' + value
+                code, rows = self.file_sync()
+                self.assertEqual(code, 1, rows)
+                self.assertIn('Content-Range', rows[-1]['error'])
+                self.assertFalse((self.output / 'payload.bin').exists())
+                self.assertEqual(list(self.output.glob('*.part')), [])
+
+    def test_truncated_responses_are_not_published_and_valid_prefix_can_resume(self):
+        self.range_behavior = 'truncate'
+        code, rows = self.file_sync(2000)
+        self.assertEqual(code, 1, rows)
+        self.assertIn('Incomplete', rows[-1]['error'])
+        self.assertFalse((self.output / 'payload.bin').exists())
+        offset = self.file_manifest()['partial']['size']
+        self.assertEqual(offset, len(self.file_body) // 2)
+        self.range_behavior = 'normal'
+        code, rows = self.file_sync(2000)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['transferredBytes'], len(self.file_body) - offset)
+        self.assertEqual((self.output / 'payload.bin').read_bytes(), self.file_body)
+
+    def test_resume_requires_strong_identity_and_unchanged_private_bytes(self):
+        for behavior in ('weak', 'no-etag', 'no-length'):
+            self.output = self.root / behavior
+            self.range_behavior = behavior
+            code, rows = self.file_sync()
+            self.assertEqual(code, 1, rows)
+            self.assertIn('Cannot safely resume', rows[-1]['error'])
+            self.assertEqual(list(self.output.glob('*.part')), [])
+            code, rows = self.file_sync(2000)
+            self.assertEqual(code, 0, rows)
+            self.assertEqual((self.output / 'payload.bin').read_bytes(), self.file_body)
+        self.output = self.root / 'tampered'
+        self.range_behavior = 'normal'
+        self.assertEqual(self.file_sync()[0], 2)
+        part = next(self.output.glob('*.part'))
+        part.write_bytes(b'x' * 100)
+        requests = len(self.requests)
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('modified partial', rows[-1]['error'])
+        self.assertEqual(len(self.requests), requests)
+        self.assertFalse((self.output / 'payload.bin').exists())
+
+    def test_changed_range_validator_or_redirect_target_cannot_mix_bytes(self):
+        for behavior in ('changed-etag', 'no-etag', 'redirect'):
+            self.output = self.root / behavior
+            self.range_behavior = 'normal'
+            self.assertEqual(self.file_sync()[0], 2)
+            self.range_behavior = behavior
+            code, rows = self.file_sync()
+            self.assertEqual(code, 1, rows)
+            self.assertIn('identity changed', rows[-1]['error'])
+            self.assertFalse((self.output / 'payload.bin').exists())
+            self.assertEqual(list(self.output.glob('*.part')), [])
+
+    def test_new_user_file_created_during_resume_is_never_replaced(self):
+        self.assertEqual(self.file_sync()[0], 2)
+        target = self.output / 'payload.bin'
+        self.on_file_request = lambda: target.write_bytes(b'new user file')
+        code, rows = self.file_sync(2000)
+        self.assertEqual(code, 1, rows)
+        self.assertIn('overwrite', rows[-1]['error'])
+        self.assertEqual(target.read_bytes(), b'new user file')
+
+    def test_file_partial_symlinks_and_uncommitted_appends_are_not_trusted(self):
+        self.assertEqual(self.file_sync()[0], 2)
+        part = next(self.output.glob('*.part'))
+        with part.open('ab') as stream:
+            stream.write(b'not checkpointed')
+        requests = len(self.requests)
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('modified partial', rows[-1]['error'])
+        self.assertEqual(len(self.requests), requests)
+        self.assertEqual(self.file_sync()[0], 2)
+        outside = self.root / 'outside.bin'
+        outside.write_bytes(b'do not touch')
+        part.unlink()
+        part.symlink_to(outside)
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('Symlinks', rows[-1]['error'])
+        self.assertEqual(outside.read_bytes(), b'do not touch')
+        self.assertEqual(len(self.requests), requests + 1)
+
+    def test_last_modified_only_file_sync_still_uses_304_and_checks_quota_and_edits(self):
+        args = dict(mode='file', filename='style.css')
+        code, rows = self.run_worker('/styles/main.css', **args)
+        self.assertEqual(code, 0, rows)
+        target = self.output / 'style.css'
+        stamp = target.stat().st_mtime_ns
+        code, rows = self.run_worker('/styles/main.css', transferLimit=0, **args)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['status'], 304)
+        self.assertIn('If-Modified-Since', self.requests[-1][1])
+        self.assertNotIn('If-None-Match', self.requests[-1][1])
+        self.assertEqual(target.stat().st_mtime_ns, stamp)
+        code, rows = self.run_worker('/styles/main.css', maxBytes=1, **args)
+        self.assertEqual(code, 1, rows)
+        self.assertIn('byte budget', rows[-1]['error'])
+
+    def test_request_identity_changes_discard_partial_without_network(self):
+        self.assertEqual(self.file_sync(headers={'Authorization': 'Bearer first'})[0], 2)
+        requests = len(self.requests)
+        code, rows = self.file_sync(headers={'Authorization': 'Bearer second'})
+        self.assertEqual(code, 1, rows)
+        self.assertIn('identity', rows[-1]['error'])
+        self.assertEqual(len(self.requests), requests)
+        self.assertFalse((self.output / 'payload.bin').exists())
+
+    def test_local_edits_before_and_during_resume_are_never_overwritten(self):
+        self.assertEqual(self.file_sync(2000)[0], 0)
+        target = self.output / 'payload.bin'
+        old = target.read_bytes()
+        self.version = 2
+        self.file_body = b'replacement ' * 12
+        self.assertEqual(self.file_sync()[0], 2)
+        self.assertEqual(target.read_bytes(), old)
+        target.write_bytes(b'user edit')
+        requests = len(self.requests)
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('modified', rows[-1]['error'])
+        self.assertEqual(len(self.requests), requests)
+        self.assertEqual(target.read_bytes(), b'user edit')
+        target.write_bytes(old)
+        self.on_file_request = lambda: target.write_bytes(b'edit while downloading')
+        code, rows = self.file_sync()
+        self.assertEqual(code, 1, rows)
+        self.assertIn('modified', rows[-1]['error'])
+        self.assertEqual(target.read_bytes(), b'edit while downloading')
+        target.write_bytes(old)
+        self.on_file_request = None
+        requests = len(self.requests)
+        code, rows = self.file_sync()
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(len(self.requests), requests)
+        self.assertEqual(rows[-1]['transferredBytes'], 0)
+        self.assertEqual(target.read_bytes(), self.file_body)
 
     def test_images_only_include_and_exclude_filters_bound_published_outputs(self):
         code, rows = self.run_worker(include=['*.png'], exclude=['img/photo*'])
