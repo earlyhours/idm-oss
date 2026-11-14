@@ -50,6 +50,16 @@ perform disk I/O and is not guaranteed to use reflinks.
 
 ## Verification and limits
 
+The complete `bin/check` run passed on 2026-11-14 against implementation commit
+`4cf8197`. This includes 54 engine checks, desktop and automation controls,
+HTTP/HTTPS/FTP/proxy/authentication fixtures, scanner integration, media decoding,
+real Chromium capture, CLI behavior and the 70-entry feature ledger. Rust unit
+tests, formatting and Clippy with warnings denied also passed. The optional
+64 MiB copy benchmark passed exact-byte verification. No ARM64 hardware,
+original Windows IDM, WAN record-speed test or installed-app upgrade was tested.
+On the development machine, the checks used `mise exec rust@stable -- bin/check`
+to select its already installed Rust toolchain without changing global settings.
+
 The Rust tests cover descriptor ownership/offsets, exact copy lengths,
 unsupported-operation fallback, partial kernel progress followed by fallback,
 interruption, invalid descriptors and unexpected EOF. Engine tests add exact
