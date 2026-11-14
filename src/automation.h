@@ -10,6 +10,8 @@ class QProcess;
 
 class Automation : public QObject {
   Q_OBJECT
+  Q_PROPERTY(QVariantList categorizedDownloads READ categorizedDownloads NOTIFY
+                 changed)
   Q_PROPERTY(QVariantMap preferences READ preferences NOTIFY changed)
   Q_PROPERTY(QVariantMap jobPolicies READ jobPolicies NOTIFY changed)
   Q_PROPERTY(QVariantList queues READ queues NOTIFY changed)
@@ -26,6 +28,8 @@ public:
   Automation(DownloadManager *manager, const QString &state,
              QObject *parent = nullptr, Executor executor = {});
   ~Automation() override;
+  QVariantList categorizedDownloads() const;
+  Q_INVOKABLE QString downloadDirectoryFor(const QVariantMap &request) const;
   QVariantMap preferences() const { return settings; }
   QVariantMap jobPolicies() const { return policies; }
   QVariantList queues() const;

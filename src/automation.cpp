@@ -1,4 +1,5 @@
 #include "automation.h"
+#include "categoryrules.h"
 #include "downloadmanager.h"
 #include <QClipboard>
 #include <QDateTime>
@@ -34,27 +35,8 @@ QString normalizedUrl(const QString &input) {
   url.setFragment({});
   return url.toString(QUrl::FullyEncoded);
 }
-QString urlOrigin(const QString &input) {
-  const QUrl url(input.trimmed());
-  const auto scheme = url.scheme().toLower();
-  if (!url.isValid() || url.host().isEmpty() || !url.userInfo().isEmpty() ||
-      !QStringList{"http", "https", "ftp", "ftps"}.contains(scheme))
-    return {};
-  QUrl origin;
-  origin.setScheme(scheme);
-  origin.setHost(url.host().toLower());
-  origin.setPort(url.port(scheme == "https"  ? 443
-                          : scheme == "ftps" ? 990
-                          : scheme == "ftp"  ? 21
-                                             : 80));
-  return origin.toString(QUrl::FullyEncoded);
-}
-bool isSiteOrigin(const QString &input) {
-  const QUrl url(input.trimmed());
-  return !urlOrigin(input).isEmpty() &&
-         (url.path().isEmpty() || url.path() == "/") && !url.hasQuery() &&
-         !url.hasFragment();
-}
+using CategoryRules::urlOrigin;
+using CategoryRules::isSiteOrigin;
 bool integer(const QVariant &value, qint64 low, qint64 high) {
   bool ok = false;
   const double number = value.toDouble(&ok);
@@ -222,6 +204,11 @@ QString validatePreferences(QVariantMap &values) {
     if (!error.isEmpty())
       return error;
   }
+  auto categories = values.value("categories");
+  const auto invalidCategories = CategoryRules::normalize(categories);
+  if (!invalidCategories.isEmpty())
+    return invalidCategories;
+  values["categories"] = categories;
   return {};
 }
 } // namespace
@@ -250,6 +237,7 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
               {"darkMode", true},
               {"typeFilter", ""},
               {"siteSettings", QVariantMap{}},
+              {"categories", QVariantList{}},
               {"speedSchedule", QVariantList{}},
               {"syncJobs", QVariantList{}},
               {"fileSyncJobs", QVariantList{}}};
@@ -325,6 +313,13 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
         }
       }
     }
+  }
+  auto categories = settings.value("categories");
+  const auto invalidCategories = CategoryRules::normalize(categories);
+  if (!invalidCategories.isEmpty()) {
+    settings["categories"] = QVariantList{};
+    if (failure.isEmpty())
+      failure = invalidCategories;
   }
   if (failure.isEmpty())
     failure = validatePreferences(settings);
@@ -506,18 +501,49 @@ QVariantMap Automation::siteSettingsForEditing(const QString &url) const {
       return i.value().toMap();
   return {};
 }
+QVariantList Automation::categorizedDownloads() const {
+  auto downloads = manager->downloads();
+  for (auto &value : downloads) {
+    auto job = value.toMap();
+    auto name = job.value("name").toString();
+    const auto policy = policies.value(job.value("id").toString()).toMap();
+    if (policy.value("categoryOutputName") == name)
+      name = policy.value("categoryFilename").toString();
+    const auto category = CategoryRules::match(
+        settings.value("categories").toList(), name, job.value("url").toString());
+    if (!category.isEmpty())
+      job["category"] = category.value("name");
+    value = job;
+  }
+  return downloads;
+}
+QString Automation::downloadDirectoryFor(const QVariantMap &request) const {
+  if (request.contains("directory"))
+    return request.value("directory").toString();
+  const auto site = settings.value("siteSettings")
+                        .toMap()
+                        .value(urlOrigin(request.value("url").toString()))
+                        .toMap();
+  if (site.contains("directory"))
+    return site.value("directory").toString();
+  const auto category = CategoryRules::match(
+      settings.value("categories").toList(), CategoryRules::filename(request),
+      request.value("url").toString());
+  const auto directory = category.value("directory").toString();
+  return directory.isEmpty() ? settings.value("directory").toString() : directory;
+}
 QString Automation::enqueue(QVariantMap request) {
   if (!settingsWritable)
     return {};
   const auto url = normalizedUrl(request.value("url").toString());
+  if (!request.contains("directory"))
+    request["directory"] = downloadDirectoryFor(request);
   const auto site =
       settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
   for (const auto &key :
-       QStringList{"directory", "connections", "proxy", "username", "password", "authMethod"})
+       QStringList{"connections", "proxy", "username", "password", "authMethod"})
     if (!request.contains(key) && site.contains(key))
       request[key] = site[key];
-  if (!request.contains("directory"))
-    request["directory"] = settings.value("directory");
   if (!request.contains("connections"))
     request["connections"] = settings.value("connections");
   if (!request.contains("proxy"))
@@ -627,7 +653,16 @@ QString Automation::enqueue(QVariantMap request) {
   const auto queue = request.value("queue", mainQueue).toString();
   if (!queueSettings.contains(queue))
     queueSettings[queue] = queueDefault();
-  policies[id] = QVariantMap{{"queue", queue},
+  QString outputName;
+  for (const auto &value : manager->downloads())
+    if (value.toMap().value("id") == id) {
+      outputName = value.toMap().value("name").toString();
+      break;
+    }
+  policies[id] = QVariantMap{{"categoryOutputName", outputName},
+                             {"categoryFilename",
+                              CategoryRules::filename(request)},
+                             {"queue", queue},
                              {"priority", request.value("priority", 0)},
                              {"armed", start},
                              {"retries", 0},

@@ -30,6 +30,7 @@ ApplicationWindow {
     palette.toolTipText: win.ink
     readonly property bool automationAvailable: typeof automation !== "undefined"
     readonly property var controller: automationAvailable ? automation : backend
+    readonly property var downloads: automationAvailable ? automation.categorizedDownloads : backend.downloads
     readonly property var preferences: automationAvailable ? automation.preferences : ({})
     FontLoader { id: brandFont; source: "qrc:/fonts/GeistPixel-Square.ttf" }
     readonly property string displayFont: brandFont.status === FontLoader.Ready ? brandFont.name : win.font.family
@@ -52,7 +53,7 @@ ApplicationWindow {
     property string filter: "all"
     property string selectedId: ""
     property string transferId: ""
-    readonly property var transferJob: backend.downloads.find(d => d.id === transferId) || null
+    readonly property var transferJob: win.downloads.find(d => d.id === transferId) || null
     property string sortKey: "created"
     property bool descending: true
     property bool categoriesVisible: true
@@ -67,15 +68,15 @@ ApplicationWindow {
     property var pendingRequest: ({})
     readonly property var authMethods: ["auto", "basic", "digest", "ntlm", "negotiate", "kerberos"]
     readonly property var authLabels: [qsTr("Auto"), "Basic", "Digest", "NTLM", "Negotiate", "Kerberos"]
-    property var selected: backend.downloads.find(d => d.id === selectedId) || null
+    property var selected: win.downloads.find(d => d.id === selectedId) || null
     property var shown: {
         let policies = win.automationAvailable ? automation.jobPolicies : {}
-        let rows = backend.downloads.filter(d => {
+        let rows = win.downloads.filter(d => {
             if (filter === "all") return true
             if (filter === "unfinished") return d.status !== "complete"
             if (filter === "finished") return d.status === "complete"
             if (filter.startsWith("queue:")) return d.status !== "complete" && ((policies[d.id] || {}).queue || "Main download queue") === filter.slice(6)
-            return d.category === filter
+            return d.category === (filter.startsWith("category:") ? filter.slice(9) : filter)
         })
         return rows.sort((a,b) => {
             let x = a[sortKey], y = b[sortKey]
@@ -84,7 +85,7 @@ ApplicationWindow {
         })
     }
     readonly property bool menusOpen: tasksMenu.visible || downloadsMenu.visible || viewMenu.visible || helpMenu.visible || rowMenu.visible || queueMenu.visible || moreActions.visible
-    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible || automationProjects.visible || layoutDialog.visible || updatesDialog.visible
+    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible || automationProjects.visible || categoryDialog.visible || layoutDialog.visible || updatesDialog.visible
     readonly property bool bridgeAvailable: typeof browserBridge !== "undefined" && browserBridge.available
     readonly property string bridgeError: typeof browserBridge !== "undefined" ? browserBridge.error : ""
     readonly property bool desktopAvailable: typeof desktop !== "undefined"
@@ -164,7 +165,7 @@ ApplicationWindow {
     function navigationCount(key) {
         if (key === "queues") return ""
         let policies = win.automationAvailable ? automation.jobPolicies : {}
-        return String(backend.downloads.filter(d => key === "all" || (key === "unfinished" ? d.status !== "complete" : key === "finished" ? d.status === "complete" : key.startsWith("queue:") ? d.status !== "complete" && ((policies[d.id] || {}).queue || "Main download queue") === key.slice(6) : d.category === key)).length)
+        return String(win.downloads.filter(d => key === "all" || (key === "unfinished" ? d.status !== "complete" : key === "finished" ? d.status === "complete" : key.startsWith("queue:") ? d.status !== "complete" && ((policies[d.id] || {}).queue || "Main download queue") === key.slice(6) : d.category === (key.startsWith("category:") ? key.slice(9) : key))).length)
     }
     function bytes(value) {
         let language = translator.language
@@ -310,7 +311,11 @@ ApplicationWindow {
     Component.onCompleted: loadPreferences()
     Connections {
         target: typeof automation !== "undefined" ? automation : null
-        function onChanged() { if (!optionsDialog.visible) win.loadPreferences() }
+        function onChanged() {
+            if (!optionsDialog.visible) win.loadPreferences()
+            if (infoDialog.visible) infoDialog.updateDirectory()
+            if (win.filter.startsWith("category:") && !(win.preferences.categories || []).some(c => "category:"+c.name === win.filter)) win.filter = "all"
+        }
         function onClipboardUrl(url) { urlInput.text=url; win.newDownload() }
     }
     function newDownload() { urlDialog.open() }
@@ -325,12 +330,13 @@ ApplicationWindow {
         pendingRequest = {url:urlInput.text.trim(), directory:defaultDirectory, connections:defaultConnections, media:mediaInput.checked}
         addressInput.text = pendingRequest.url
         let site=siteForUrl(pendingRequest.url)
-        directoryInput.text = site.directory || defaultDirectory
         let path = pendingRequest.url.split(/[?#]/)[0]
         try { filenameInput.text = decodeURIComponent(path.substring(path.lastIndexOf("/")+1)) || "download" } catch(e) { filenameInput.text = "download" }
         descriptionInput.text = ""
         infoMedia.checked = mediaInput.checked
         connections.value = site.connections || defaultConnections
+        infoDialog.destinationEdited = false
+        infoDialog.updateDirectory()
         urlDialog.close()
         infoDialog.open()
     }
@@ -536,6 +542,7 @@ ApplicationWindow {
             IdmMenuSeparator { appWindow: win; }
             Action { text: qsTr("Import downloads"); icon.source: win.iconSource("download", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=true; listDialog.open() } }
             Action { text: qsTr("Export downloads"); icon.source: win.iconSource("file", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=false; listDialog.open() } }
+            Action { objectName: "manageCategoriesAction"; text: qsTr("Custom categories"); enabled: win.automationAvailable; onTriggered: categoryDialog.open() }
             Action { objectName: "automationProjectsAction"; text: qsTr("Synchronization and quotas"); enabled: win.automationAvailable; onTriggered: automationProjects.open() }
             Action { text: qsTr("Site Grabber"); icon.source: win.iconSource("folder", win.muted); enabled: win.automationAvailable; onTriggered: grabberDialog.open() }
             IdmMenuSeparator { appWindow: win; }
@@ -599,8 +606,7 @@ ApplicationWindow {
                                 {key:"unfinished",label:qsTr("Unfinished"),depth:0,icon:"stop"},{key:"finished",label:qsTr("Finished"),depth:0,icon:"completed"},
                                 {key:"types",label:qsTr("File types"),depth:0,icon:"chevron",section:true},
                                 {key:"Compressed",label:qsTr("Compressed"),depth:1,icon:"folder"},{key:"Documents",label:qsTr("Documents"),depth:1,icon:"file"},
-                                {key:"Music",label:qsTr("Music"),depth:1,icon:"music"},{key:"Programs",label:qsTr("Programs"),depth:1,icon:"file"},{key:"Video",label:qsTr("Video"),depth:1,icon:"video"},{key:"Other",label:qsTr("Other"),depth:1,icon:"folder"},
-                                {key:"queues",label:qsTr("Queues"),depth:0,icon:"queue"}].concat((win.automationAvailable ? automation.queues : [{name:"Main download queue"}]).map(q => ({key:"queue:"+q.name,label:q.name === "Main download queue" ? qsTr("Main download queue") : q.name,depth:1,icon:"queue"})))
+                                {key:"Music",label:qsTr("Music"),depth:1,icon:"music"},{key:"Programs",label:qsTr("Programs"),depth:1,icon:"file"},{key:"Video",label:qsTr("Video"),depth:1,icon:"video"},{key:"Other",label:qsTr("Other"),depth:1,icon:"folder"}].concat((win.preferences.categories || []).map(c => ({key:"category:"+c.name,label:c.name,depth:1,icon:"folder"}))).concat([{key:"queues",label:qsTr("Queues"),depth:0,icon:"queue"}]).concat((win.automationAvailable ? automation.queues : [{name:"Main download queue"}]).map(q => ({key:"queue:"+q.name,label:q.name === "Main download queue" ? qsTr("Main download queue") : q.name,depth:1,icon:"queue"})))
                             delegate: Rectangle {
                                 id: navItem
                                 objectName: "navigation-" + modelData.key
@@ -629,7 +635,7 @@ ApplicationWindow {
                                 RowLayout {
                                     anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 9
                                     AppIcon { visible: !navItem.section; kind: navItem.modelData.icon; Layout.preferredWidth: 15; Layout.preferredHeight: 15; tint: navItem.selected ? win.accent : win.muted }
-                                    Text { text: navItem.modelData.label; font.pixelSize: 12; font.weight: navItem.selected || navItem.section ? Font.Medium : Font.Normal; color: navItem.selected ? win.ink : win.muted; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Text { text: navItem.modelData.label; textFormat: Text.PlainText; font.pixelSize: 12; font.weight: navItem.selected || navItem.section ? Font.Medium : Font.Normal; color: navItem.selected ? win.ink : win.muted; elide: Text.ElideRight; Layout.fillWidth: true }
                                     Text { text: navItem.section ? "" : win.navigationCount(navItem.modelData.key); font.family: win.mono; font.pixelSize: 10; color: navItem.selected ? win.ink : win.muted; visible: text !== "" && text !== "0" }
                                     AppIcon { visible: navItem.section || navItem.modelData.key === "queues"; kind: "chevron"; Layout.preferredWidth: 11; Layout.preferredHeight: 11; tint: win.muted; rotation: (navItem.section ? win.filesExpanded : win.queuesExpanded) ? 90 : 0 }
                                 }
@@ -679,7 +685,7 @@ ApplicationWindow {
                             Layout.fillWidth: true; elide: Text.ElideRight
                         }
                         Label {
-                            readonly property int activeCount: backend.downloads.filter(d => win.running(d)).length
+                            readonly property int activeCount: win.downloads.filter(d => win.running(d)).length
                             visible: activeCount > 0
                             text: qsTr("%1 active").arg(activeCount); font.pixelSize: 12; color: win.muted
                         }
@@ -747,6 +753,7 @@ ApplicationWindow {
                             }
                             delegate: Rectangle {
                                 id: row
+                                objectName: "download-row-" + modelData.id
                                 required property var modelData
                                 required property int index
                                 width: rows.width; height: win.rowHeight
@@ -766,7 +773,7 @@ ApplicationWindow {
                                             }
                                             Text {
                                                 id: cellLabel
-                                                x: modelData.key === "name" ? 46 : 12; width: parent.width-x-12; height: parent.height
+                                                x: modelData.key === "name" ? 46 : 12; width: parent.width-x-12; height: modelData.key === "name" ? parent.height-16 : parent.height
                                                 text: win.cell(row.modelData,modelData.key); elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
                                                 horizontalAlignment: parent.numeric ? Text.AlignRight : Text.AlignLeft
                                                 font.family: parent.numeric ? win.mono : win.font.family
@@ -778,6 +785,11 @@ ApplicationWindow {
                                                     visible: rowMouse.containsMouse && rowMouse.mouseX >= cellLabel.parent.x && rowMouse.mouseX < cellLabel.parent.x+cellLabel.parent.width && cellLabel.truncated
                                                     delay: 700; text: cellLabel.text; width: Math.min(600,win.width-24)
                                                 }
+                                            }
+                                            Text {
+                                                objectName: modelData.key === "name" ? "downloadCategory-" + row.modelData.id : ""
+                                                visible: modelData.key === "name"; x: 46; y: parent.height-18; width: parent.width-58; height: 14
+                                                text: row.modelData.category; textFormat: Text.PlainText; elide: Text.ElideRight; font.pixelSize: 10; color: win.muted
                                             }
                                             Rectangle {
                                                 visible: modelData.key === "status" && win.running(row.modelData) && row.modelData.total > 0
@@ -821,7 +833,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                         AppIcon { kind: "download"; tint: win.muted; width: 24; height: 24; anchors.centerIn: parent }
                     }
-                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: backend.downloads.length ? qsTr("Nothing in this view") : qsTr("No downloads yet"); font.pixelSize: 18; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink; wrapMode: Text.WordWrap }
+                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: win.downloads.length ? qsTr("Nothing in this view") : qsTr("No downloads yet"); font.pixelSize: 18; font.weight: Font.DemiBold; font.letterSpacing: -.4; color: win.ink; wrapMode: Text.WordWrap }
                     Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Add a link or send one from your browser."); font.pixelSize: 12; color: win.muted; wrapMode: Text.WordWrap; lineHeight: 1.4 }
 
                 }
@@ -926,6 +938,11 @@ ApplicationWindow {
     }
     NativeDialog {
         id: infoDialog; objectName: "infoDialog"
+        property bool destinationEdited: false
+        function updateDirectory() {
+            if (!destinationEdited)
+                directoryInput.text = win.automationAvailable ? automation.downloadDirectoryFor({url:addressInput.text, filename:filenameInput.text, media:infoMedia.checked, format:["best","1080p","720p","audio"][mediaFormat.currentIndex]}) : win.defaultDirectory
+        }
         onOpened: infoOptions.checked = infoMedia.checked || useRequestHeaders.checked
         onClosed: { requestHeadersInput.clear(); useRequestHeaders.checked=false }
         title: qsTr("Save download"); onRejected: win.droppedUrls = []
@@ -939,10 +956,10 @@ ApplicationWindow {
                     width: infoScroll.availableWidth; spacing: 8
                     Label { text: win.sourceHost({url:addressInput.text}); font.pixelSize: 12; color: win.muted; elide: Text.ElideRight; Layout.fillWidth: true; Layout.bottomMargin: 12 }
                     Label { text: qsTr("File name"); font.pixelSize: 11; color: win.muted }
-                    AppField { id: filenameInput; objectName: "filenameInput"; Layout.fillWidth: true }
+                    AppField { id: filenameInput; objectName: "filenameInput"; Layout.fillWidth: true; onTextChanged: if (infoDialog.visible) infoDialog.updateDirectory() }
                     Label { text: qsTr("Save to"); font.pixelSize: 11; color: win.muted; Layout.topMargin: 8 }
                     RowLayout { Layout.fillWidth: true; spacing: 8
-                        AppField { id: directoryInput; objectName: "directoryInput"; Layout.fillWidth: true }
+                        AppField { id: directoryInput; objectName: "directoryInput"; Layout.fillWidth: true; onTextEdited: infoDialog.destinationEdited = true }
                         AppButton { text: qsTr("Browse..."); onClicked: picker.open() }
                     }
                     FormDisclosure { id: infoOptions; objectName: "infoOptionsDisclosure"; text: qsTr("Download options"); Layout.fillWidth: true; Layout.topMargin: 12 }
@@ -950,14 +967,14 @@ ApplicationWindow {
                         visible: infoOptions.checked; Layout.fillWidth: true; spacing: 12
                         AppCheckBox {
                             id: infoMedia; objectName: "infoMedia"; text: qsTr("Video or audio")
-                            onCheckedChanged: if (checked) infoOptions.checked = true
+                            onCheckedChanged: { if (checked) infoOptions.checked = true; if (infoDialog.visible) infoDialog.updateDirectory() }
                         }
-                        IdmComboBox { appWindow: win; id: mediaFormat; objectName: "mediaFormat"; visible: infoMedia.checked; Layout.fillWidth: true; model: [qsTr("Best quality"),"1080p","720p",qsTr("Audio only")] }
+                        IdmComboBox { appWindow: win; id: mediaFormat; objectName: "mediaFormat"; onCurrentIndexChanged: if (infoDialog.visible) infoDialog.updateDirectory(); visible: infoMedia.checked; Layout.fillWidth: true; model: [qsTr("Best quality"),"1080p","720p",qsTr("Audio only")] }
                         Label { visible: infoMedia.checked; text: qsTr("Requires yt-dlp and ffmpeg. Protected streams are not supported."); font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: win.muted }
                         GridLayout {
                             columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true; Layout.topMargin: 8
                             Label { text: qsTr("URL"); font.pixelSize: 11; color: win.muted }
-                            AppField { id: addressInput; objectName: "addressInput"; Layout.fillWidth: true }
+                            AppField { id: addressInput; objectName: "addressInput"; Layout.fillWidth: true; onTextChanged: if (infoDialog.visible) infoDialog.updateDirectory() }
                             Label { text: qsTr("Description"); font.pixelSize: 11; color: win.muted }
                             AppField { id: descriptionInput; objectName: "descriptionInput"; Layout.fillWidth: true }
                             Label { text: qsTr("Connections"); font.pixelSize: 11; color: win.muted }
@@ -985,7 +1002,7 @@ ApplicationWindow {
     }
     Connections {
         target: picker
-        function onSelected(directory) { if (infoDialog.visible) directoryInput.text = directory; else defaultsDirectory.text = directory }
+        function onSelected(directory) { if (infoDialog.visible) { infoDialog.destinationEdited = true; directoryInput.text = directory } else defaultsDirectory.text = directory }
         function onError(message) { win.lastError = message }
     }
     NativeDialog {
@@ -1480,6 +1497,13 @@ ApplicationWindow {
             Label { text: qsTr("Independent download manager for files and media."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
             Label { text: qsTr("Not affiliated with Tonec."); color: win.muted; font.pixelSize: 12 }
         }
+    }
+    CategoryDialog {
+        id: categoryDialog
+        controller: win.automationAvailable ? automation : null
+        appWindow: win
+        parent: Overlay.overlay
+        anchors.centerIn: parent
     }
     AutomationDialog {
         id: automationProjects
