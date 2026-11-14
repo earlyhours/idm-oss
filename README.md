@@ -132,6 +132,12 @@ Practical benefits over an ordinary one-shot download include persistent queues,
 
 Reproduce the controlled comparison with `python3 tests/download_comparison.py --output build/download-comparison.json`. Add `--public-url https://www.python.org/ftp/python/3.13.0/Python-3.13.0.tar.xz` to repeat the public download. `bin/check` runs one trial per controlled scenario; public-network benchmarks are opt-in.
 
+## Download 0.3.0
+
+[Arch Linux x86_64 package](https://github.com/earlyhours/idm-oss/releases/download/v0.3.0/idm-native-0.3.0-1-x86_64.pkg.tar.zst) · [Release notes and hashes](https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0)
+
+The published package was downloaded again and its SHA-256 matched the locally verified artifact. The live Qt update checker recognizes this release. Installation still uses your package manager.
+
 ## Build, run and install
 
 ```sh
@@ -217,4 +223,4 @@ The [verification record](docs/verification.md), [system integration report](doc
 
 ## Remaining bounds
 
-The static website grabber is not a JavaScript browser renderer. Capture supports finite, unprotected media; DRM bypass and live-stream recording are unsupported. Native portal selection, actual session-login startup, external file-manager drop receipt, FTPS servers, and every desktop notification/audio/authorization environment were not physically exercised. MMS is unsupported. Only English and Danish interface catalogs are included; original IDM toolbar skin packs are not compatible. Firefox signing and a published stable release remain external distribution steps. The UI follows the supplied help's classic structure; complete pixel and behavioral equivalence with every Windows IDM version is unproven.
+The static website grabber is not a JavaScript browser renderer. Capture supports finite, unprotected media; DRM bypass and live-stream recording are unsupported. Native portal selection, actual session-login startup, external file-manager drop receipt, FTPS servers, and every desktop notification/audio/authorization environment were not physically exercised. MMS is unsupported. Only English and Danish interface catalogs are included; original IDM toolbar skin packs are not compatible. Firefox signing remains an external distribution step. The stable 0.3.0 release is published above. The UI follows the supplied help's classic structure; complete pixel and behavioral equivalence with every Windows IDM version is unproven.
