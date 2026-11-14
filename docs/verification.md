@@ -59,3 +59,17 @@ Free REA/Ghidra analysis retained pseudocode for six main HTTP/header routines a
 - Portal-response validation is automated, but an actual interactive portal folder-selection session remains unverified. Every filesystem, compositor and long-running real-world workload has not been exercised. Final publication needs hard-link support and temporary assembly space.
 
 TL;DR: the current source passes the local suite, including real Chromium capture, authenticated media and the minimum-window UI checks. Native version 0.2.0 is installed and its browser-host ping passes. The audit records all 70 capability paths within stated limits; it does not claim a live public site or rebuilt proprietary IDM.
+
+## Version 0.3.0 parity expansion
+
+The fixed implementation at `cb956fd` passed the expanded `bin/check` locally with zero failures or skips. The check includes the existing engine, UI, TLS, browser bridge, automation, adversarial, media, crawler, system-integration and CLI checks. It also includes the new desktop, synchronization, category, protocol and ordinary-download comparison suites.
+
+The protocol suite passes 29 tests, including real Basic and Digest challenges, an isolated Kerberos KDC, Qt NTLMv2 proofs, encrypted proxy trust, SOCKS media with decoded-frame comparisons, FTP resume verification, literal bracket URLs, HEAD handling and date-validator recovery. An unavailable explicit curl NTLM transport is tested as an honest error. This does not imply that the installed curl supports NTLM.
+
+The worker suite passes 29 tests. Worker and controller checks cover quota-period recovery, cancellation cleanup, project startup failures, changed source URLs and a real completion program with cancellation. The category suite verifies actual paths and bytes, rule persistence, exact origin matching, explicit directory precedence and QML controls. Qt totals include setup and cleanup; they are not counts of distinct product features.
+
+Real Chromium capture passed with selected-link byte checks, private media headers, decoded frames, expired-context recovery, interception and ordinary-browser fallback. A separate isolated headless Zen 1.24.2b run verified the Firefox-compatible manifest, native handoff, exact file bytes and decoded frames.
+
+The Arch package `idm-native-0.3.0-1-x86_64.pkg.tar.zst` was built, extracted and tested. Its binary reports 0.3.0, renders the embedded QML interface offscreen, and completes a local download with exact output bytes. Both packaged browser manifests report 0.3.0. The system-installed package was not changed. [Release verification](release-verification.json) records source and artifact hashes.
+
+[Review corrections](parity-review.md) records accepted independent-review findings and regressions. The [original comparison baseline](download-comparison-baseline.json) preserves the earlier measured samples. The latest [download comparison](download-comparison.json) records the tested revision, platform, curl version and individual timing samples. Neither comparison ran original Windows IDM; the user confirmed that no such environment is available.
