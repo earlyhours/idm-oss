@@ -86,7 +86,22 @@ The checklist below records the project's tested behavior. The original 70 reque
 
 </details>
 
-Additional parity work covers file synchronization queues, transfer quotas, scheduled grabber projects, authentication and proxy coverage, FTP recovery, desktop customization, login startup, update checking and selected page links. These are being verified separately from the older 70-item ledger.
+Additional parity checklist, separate from the older 70-item ledger:
+
+- [x] Individual-file periodic synchronization with remote validators, retained completed entries, atomic replacement and protection for local edits. [Tests](tests/automation_sync_tests.cpp).
+- [x] Received-byte quota per configurable period, persisted across restart with automatic pause/resume. Buffered traffic and retry accounting can exceed the allowance; this is not a strict network traffic meter. [Tests](tests/automation_sync_tests.cpp).
+- [x] One-time and periodic grabber projects with start/stop dates. [Tests](tests/automation_sync_tests.cpp).
+- [x] Include/exclude wildcard filters for website projects. [Tests](tests/website_worker_test.py).
+- [x] Selected page links, with selection boundaries, deduplication and frame targeting. [Unit tests](tests/browser_extension_test.mjs), [real browser test](tests/browser_e2e.mjs).
+- [x] Usable quota and synchronization project controls. [Real QML click-to-download test](tests/automation_ui_tests.cpp).
+- [ ] Resumable file synchronization across quota periods. Implementation in progress.
+- [ ] Broader authentication, proxy and FTP recovery coverage. Implementation in progress.
+- [ ] Toolbar and column customization, completed-file drag, login startup and release checking. Implementation in progress.
+- [ ] Signed Firefox distribution. Normal persistent installation still needs Mozilla signing or an appropriate developer build.
+- [ ] Complete original IDM language catalogs, toolbar skin compatibility, legacy MMS, Windows application interception and modem management.
+- [ ] Direct feature-by-feature and speed comparison against original Windows IDM. No working Windows IDM environment is available in this run.
+
+Open **Tasks > Synchronization and quotas** for the new controls. Add a file project with a URL, destination, plain filename and interval. Use a new filename when a local file already exists, since unrelated files are never adopted or overwritten. Website projects support comma-separated, case-sensitive URL path patterns such as `*.png, *.jpg` and `private/*`; discovery pages and CSS may still be fetched. Dates use ISO format, and a website repeat interval of zero runs the project once. Site profile headers apply only to the matching origin. Removing a project retains its output files.
 
 The reproducible comparison runs ordinary curl, IDM Native with one connection, and IDM Native with four connections against the same files. It checks exact SHA-256 hashes, alternates execution order over three trials, and includes executable startup and final file publication in elapsed time. It also checks that an existing local file remains unchanged when the app downloads a file with the same name.
 
