@@ -4,6 +4,8 @@
 
 A native Omarchy download manager with IDM's familiar menus, toolbar, category tree, download table and transfer dialogs. Browser capture, HLS/DASH media, queues, scheduling, proxies, authentication, website mirroring and completion actions are implemented independently in C++/Qt and free local tools.
 
+The source is MIT licensed. Linux-specific conveniences include native Qt controls, Arch packaging, a JSON command line, headless operation and reproducible local-server tests.
+
 The [70-feature ledger](docs/features.json) maps each requested capability to code, behavior tests and evidence. [The independent audit](docs/final-feature-audit.md) explains the coverage and limits. A pass means the documented behavior was tested, not every possible site or feature combination.
 
 ## Feature checklist and comparison
@@ -94,12 +96,16 @@ Additional parity checklist, separate from the older 70-item ledger:
 - [x] Include/exclude wildcard filters for website projects. [Tests](tests/website_worker_test.py).
 - [x] Selected page links, with selection boundaries, deduplication and frame targeting. [Unit tests](tests/browser_extension_test.mjs), [real browser test](tests/browser_e2e.mjs).
 - [x] Usable quota and synchronization project controls. [Real QML click-to-download test](tests/automation_ui_tests.cpp).
-- [ ] Resumable file synchronization across quota periods. Implementation in progress.
+- [x] Resumable file synchronization across quota periods, using private disk partials, strong ETags and checked byte ranges. Servers without safe resume need a quota large enough for one transfer. [Tests](tests/website_worker_test.py).
 - [ ] Broader authentication, proxy and FTP recovery coverage. Implementation in progress.
-- [ ] Toolbar and column customization, completed-file drag, login startup and release checking. Implementation in progress.
+- [x] Persisted toolbar and column order/visibility, completed-file drag and opt-in login startup. [Desktop tests](tests/desktop_tests.cpp), [actual executable startup tests](tests/desktop_startup_test.py).
+- [x] Manual release checking and opt-in weekly checks with bounded, plain-text release notes. Installing a release still uses the package/release workflow; a stable upstream release must exist.
+- [x] Explicit desktop URL handling with confirmation. This does not intercept arbitrary application network traffic.
 - [ ] Signed Firefox distribution. Normal persistent installation still needs Mozilla signing or an appropriate developer build.
 - [ ] Complete original IDM language catalogs, toolbar skin compatibility, legacy MMS, Windows application interception and modem management.
 - [ ] Direct feature-by-feature and speed comparison against original Windows IDM. No working Windows IDM environment is available in this run.
+
+Use **View > Customize toolbar and columns**, **Options > General** for login startup and weekly checks, and **Help > Check for updates** for release information. **Options > Browser** can register an explicit `idm-native://download/?url=...` desktop URL handler.
 
 Open **Tasks > Synchronization and quotas** for the new controls. Add a file project with a URL, destination, plain filename and interval. Use a new filename when a local file already exists, since unrelated files are never adopted or overwritten. Website projects support comma-separated, case-sensitive URL path patterns such as `*.png, *.jpg` and `private/*`; discovery pages and CSS may still be fetched. Dates use ISO format, and a website repeat interval of zero runs the project once. Site profile headers apply only to the matching origin. Removing a project retains its output files.
 

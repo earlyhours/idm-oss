@@ -200,6 +200,28 @@ private slots:
         auto object=QJsonDocument::fromJson(releaseJson()).object(); object["prerelease"]=true;
         QVERIFY(DesktopIntegration::parseRelease(QJsonDocument(object).toJson(),"0.2.1").isEmpty());
     }
+    void weeklyUpdateChecksAreOptInAndPersistAcrossRestart() {
+        QTemporaryDir temp; Network network;
+        {
+            DesktopIntegration desktop(temp.path(),{},&network);
+            desktop.checkScheduledUpdates(); QCOMPARE(network.calls,0);
+            QVERIFY(desktop.setAutomaticUpdateChecks(true));
+            QTRY_VERIFY(!desktop.checking()); QCOMPARE(network.calls,1);
+            desktop.checkScheduledUpdates(); QCOMPARE(network.calls,1);
+        }
+        {
+            DesktopIntegration reopened(temp.path(),{},&network);
+            QVERIFY(reopened.automaticUpdateChecks());
+            reopened.checkScheduledUpdates(); QCOMPARE(network.calls,1);
+        }
+        QSettings settings(temp.path()+"/desktop.ini",QSettings::IniFormat);
+        settings.setValue("lastUpdateCheck",QDateTime::currentDateTimeUtc().addDays(-8)); settings.sync();
+        DesktopIntegration due(temp.path(),{},&network);
+        due.checkScheduledUpdates(); QTRY_VERIFY(!due.checking()); QCOMPARE(network.calls,2);
+        QVERIFY(due.setAutomaticUpdateChecks(false));
+        settings.setValue("lastUpdateCheck",QDateTime::currentDateTimeUtc().addDays(-8)); settings.sync();
+        due.checkScheduledUpdates(); QCOMPARE(network.calls,2);
+    }
     void updateRequestAndFailures() {
         QTemporaryDir temp; Network network; DesktopIntegration desktop(temp.path(),{},&network);
         desktop.checkForUpdates(); desktop.checkForUpdates();

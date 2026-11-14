@@ -1113,6 +1113,11 @@ ApplicationWindow {
                         onClicked: { if (!desktop.setAutostart(checked)) { win.lastError=desktop.error; checked=desktop.autostart } }
                     }
                     Label { text: qsTr("Login startup is saved immediately."); font.pixelSize: 11; color: win.muted }
+                    AppCheckBox {
+                        objectName: "weeklyUpdateCheck"; text: qsTr("Check for updates weekly"); enabled: win.desktopAvailable
+                        checked: win.desktopAvailable && desktop.automaticUpdateChecks
+                        onClicked: { if (!desktop.setAutomaticUpdateChecks(checked)) { win.lastError=desktop.error; checked=desktop.automaticUpdateChecks } }
+                    }
                     AppButton { text: qsTr("Customize toolbar and columns"); enabled: win.desktopAvailable; onClicked: layoutDialog.open() }
                     Item { Layout.fillHeight: true }
                 }

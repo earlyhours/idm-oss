@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDateTime>
 #include <QDir>
 #include <QDrag>
 #include <QFileInfo>
@@ -45,7 +46,12 @@ DesktopIntegration::DesktopIntegration(const QString &stateDirectory, const QStr
                                        QNetworkAccessManager *network, QObject *parent)
     : QObject(parent), settings(stateDirectory + "/desktop.ini", QSettings::IniFormat),
       executable(path.isEmpty() ? QCoreApplication::applicationFilePath() : path),
-      stateDirectory(QFileInfo(stateDirectory).absoluteFilePath()), network(network ? network : &ownedNetwork) {}
+      stateDirectory(QFileInfo(stateDirectory).absoluteFilePath()), network(network ? network : &ownedNetwork) {
+    updateTimer.setInterval(60 * 60 * 1000);
+    connect(&updateTimer, &QTimer::timeout, this, &DesktopIntegration::checkScheduledUpdates);
+    updateTimer.start();
+    QTimer::singleShot(0, this, &DesktopIntegration::checkScheduledUpdates);
+}
 
 QVariantMap DesktopIntegration::layout() const {
     auto hiddenColumns = known(settings.value("columnHidden", columnHidden).toStringList(), columnOrder);
@@ -198,8 +204,24 @@ QVariantMap DesktopIntegration::parseRelease(const QByteArray &json, const QStri
             {"published", object.value("published_at").toString().left(64)}, {"url", releasePrefix + tag}, {"newer", remote > current}};
 }
 
+bool DesktopIntegration::setAutomaticUpdateChecks(bool enabled) {
+    settings.setValue("automaticUpdateChecks", enabled);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) return reject(tr("Cannot save update preferences."));
+    failure.clear(); emit changed();
+    checkScheduledUpdates();
+    return true;
+}
+
+void DesktopIntegration::checkScheduledUpdates() {
+    const auto last = settings.value("lastUpdateCheck").toDateTime();
+    if (automaticUpdateChecks() && (!last.isValid() || last.addDays(7) <= QDateTime::currentDateTimeUtc()))
+        checkForUpdates();
+}
+
 void DesktopIntegration::checkForUpdates() {
     if (pending) return;
+    settings.setValue("lastUpdateCheck", QDateTime::currentDateTimeUtc()); settings.sync();
     pending = true; latest.clear(); updateMessage = tr("Checking GitHub releases..."); emit updateChanged();
     QNetworkRequest request(QUrl("https://api.github.com/repos/earlyhours/idm-rust/releases/latest"));
     request.setRawHeader("Accept", "application/vnd.github+json");

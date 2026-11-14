@@ -5,6 +5,7 @@ cd "$ROOT"
 bin/build
 bin/test
 bin/test-ui
+bin/test-desktop
 bin/test-bridge
 python3 tests/background_startup_test.py
 bin/test-automation

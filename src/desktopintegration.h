@@ -3,6 +3,7 @@
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QSettings>
+#include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
 
@@ -10,6 +11,7 @@ class DesktopIntegration : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantMap layout READ layout NOTIFY changed)
     Q_PROPERTY(bool autostart READ autostart NOTIFY changed)
+    Q_PROPERTY(bool automaticUpdateChecks READ automaticUpdateChecks NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(bool checking READ checking NOTIFY updateChanged)
     Q_PROPERTY(QVariantMap release READ release NOTIFY updateChanged)
@@ -20,6 +22,9 @@ public:
                                 QNetworkAccessManager *network = nullptr, QObject *parent = nullptr);
     QVariantMap layout() const;
     bool autostart() const;
+    bool automaticUpdateChecks() const { return settings.value("automaticUpdateChecks", false).toBool(); }
+    Q_INVOKABLE bool setAutomaticUpdateChecks(bool enabled);
+    Q_INVOKABLE void checkScheduledUpdates();
     QString error() const { return failure; }
     bool checking() const { return pending; }
     QVariantMap release() const { return latest; }
@@ -45,6 +50,7 @@ private:
     QString executable, stateDirectory, failure, updateMessage;
     QNetworkAccessManager ownedNetwork;
     QNetworkAccessManager *network;
+    QTimer updateTimer;
     bool pending = false;
     QVariantMap latest;
     QString autostartPath() const;

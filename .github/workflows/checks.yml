@@ -6,7 +6,7 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install free build tools
-        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2
       - uses: actions/checkout@v4
       - name: Build
         run: bin/build
@@ -14,6 +14,14 @@ jobs:
         run: bin/test
       - name: Desktop interface
         run: bin/test-ui
+      - name: Desktop integration and startup
+        run: bin/test-desktop
+      - name: Synchronization and quota integration
+        run: bin/test-automation-sync
+      - name: Synchronization desktop controls
+        run: bin/test-automation-ui
+      - name: Ordinary download comparison
+        run: python tests/download_comparison.py --rounds 1
       - name: Native browser messaging
         run: bin/test-bridge
       - name: Browser extension
