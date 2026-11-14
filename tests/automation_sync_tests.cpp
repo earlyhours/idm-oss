@@ -281,8 +281,10 @@ private slots:
       QTRY_COMPARE_WITH_TIMEOUT(
           a.syncQueue().first().toMap()["status"].toString(),
           QString("complete"), 5000);
-      QCOMPARE(read(target), server.body);
-      QCOMPARE(a.quota()["usedBytes"].toLongLong(), server.body.size());
+      QCOMPARE(read(target), QByteArray("version one"));
+      QCOMPARE(a.quota()["usedBytes"].toLongLong(), 6);
+      QVERIFY(server.requests.last().contains("Range: bytes=5-10"));
+      QVERIFY(server.requests.last().contains("If-Range: \"one\""));
     }
   }
   void immediateGrabberAlsoResumesAfterQuotaAndRestart() {

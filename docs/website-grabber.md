@@ -61,3 +61,27 @@ python -m py_compile tools/website_worker.py tests/website_worker_test.py
 ```
 
 The ten integration tests run the actual worker in subprocesses against local HTTP servers. They verify HTML/CSS/image rewrites, query collisions, cycle bounds, MIME detection, same-origin redirects and fragments, external-origin exclusion, ETag/Last-Modified 304 sync, changed content, unchanged modification times, preservation of unrelated files and user edits, symlink rejection, depth/file/byte limits, gzip expansion limits, private headers, redacted query progress, overlapping-job rejection and interrupted cache/validator association. They do not establish offline fidelity for arbitrary external websites or JavaScript applications.
+
+## Scheduled project configuration
+
+`Automation.configure` accepts `syncJobs` for website projects and `fileSyncJobs` for individual files. Both lists persist in private application state. Each project has `url`, an absolute `directory`, `intervalMinutes`, and optional `enabled`, `startAt`, `stopAt`, and `nextRun`. Timestamps use ISO format. Website projects also accept `depth`, `include`, and `exclude`. File projects require a plain `filename`.
+
+A website interval of zero runs once. File intervals start at one minute. Due projects run while the application is open or in background mode. A stop date cancels the active project. The controller serializes project workers. `syncQueue` exposes retained file entries with `status`, `error`, `lastRun`, `transferredBytes`, and `unchanged`.
+
+Include and exclude lists contain at most 32 wildcard patterns, each at most 256 characters. Patterns match decoded URL paths without the leading slash and are case sensitive. Exclusions win. Discovery HTML and CSS may still be fetched when the filter selects only images. Excluded resources keep their external references. A later filter change does not delete existing output.
+
+The immediate `mirror(url, directory, depth, filters)` method accepts the same `include` and `exclude` lists. Site profile headers apply to workers only when the project's scheme, host, and effective port match that profile. Redirects outside that origin remain blocked.
+
+## Individual-file synchronization and quota resume
+
+The worker's `mode: "file"` accepts arbitrary file content instead of requiring an HTML starting document. It streams into a private disk partial and keeps a filename-specific `.idm-file-<hash>.json` manifest. Separate file projects can share a directory when their filenames differ.
+
+Completed entries stay in the synchronization queue. Subsequent runs send stored validators. A valid unchanged response preserves the existing file. A changed response replaces only a file whose hash matches the project's ownership record. An unrelated file, a user edit, or a symlink produces a visible error.
+
+`transferLimit` limits body bytes read during one worker invocation. Exhaustion exits with code 2 and a `quotaPaused` event. Safe cross-period resume requires a strong ETag, a known total length, identity encoding, and valid conditional range responses. The next worker verifies the private partial's owner, permissions, size, and hash before requesting the remaining range. Changed identity, malformed ranges, or a server that ignores Range cause the worker to discard the partial and report that a later run must restart. No mixed or truncated output is published.
+
+The controller accepts `quotaMB` and `quotaPeriodMinutes`; one MB means 1,048,576 bytes. Zero MB disables enforcement. Usage and period start survive application restarts, and quota-paused work resumes at the next period. File and media downloads use received-byte snapshots; retries and buffered traffic can exceed the allowance. Worker transfers report body bytes as they are read. This accounting is not a system-wide network traffic meter.
+
+File synchronization has a configured worker byte budget of 500 MiB per resource. Servers without safe range resume need an allowance large enough for one complete transfer. Forced-crash recovery can reject an unverified partial rather than reuse bytes with an unknown identity.
+
+The worker fixtures cover quota-period resumes, changed ETags, ignored ranges, malformed Content-Range, truncated responses, modified private partials, and user-edited destinations. `bin/test-automation-sync` checks the controller across restarts. `bin/test-automation-ui` checks real mouse clicks through to authenticated file bytes.
