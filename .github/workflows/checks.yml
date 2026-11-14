@@ -20,6 +20,8 @@ jobs:
         run: bin/test-automation-sync
       - name: Synchronization desktop controls
         run: bin/test-automation-ui
+      - name: Custom category controls and destinations
+        run: bin/test-categories
       - name: Ordinary download comparison
         run: python tests/download_comparison.py --rounds 1
       - name: Native browser messaging

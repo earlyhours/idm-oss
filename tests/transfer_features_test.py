@@ -8,6 +8,8 @@ import contextlib
 import ctypes
 import ctypes.util
 import hashlib
+import email.utils
+import runpy
 import hmac
 import http.server
 import json
@@ -129,7 +131,13 @@ class HTTP(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body[offset:offset + 8192])
             self.wfile.flush()
             if getattr(self.server, "slow", False):
-                time.sleep(.015)
+                time.sleep(getattr(self.server,"delay",.015))
+
+    def do_HEAD(self):
+        self.server.requests.append((self.path, dict(self.headers)))
+        self.send_response(200)
+        self.send_header("Content-Length", "123")
+        self.end_headers()
 
     def do_GET(self):
         self.server.requests.append((self.path, dict(self.headers)))
@@ -154,11 +162,11 @@ class HTTP(http.server.BaseHTTPRequestHandler):
         if getattr(self.server, "redirect", None):
             return self.send_body(302, headers={"Location": self.server.redirect})
         if getattr(self.server, "root", None):
-            path = self.server.root / urllib.parse.urlsplit(self.path).path.lstrip("/")
+            path = self.server.root / urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).lstrip("/")
             body = path.read_bytes()
         else:
             body = self.server.body
-        fields = {"ETag": self.server.etag}
+        fields = {"ETag": self.server.etag, **getattr(self.server,"extra_headers",{})}
         path = urllib.parse.urlsplit(self.path).path
         fields["Content-Type"] = ("application/vnd.apple.mpegurl" if path.endswith(".m3u8") else "application/dash+xml" if path.endswith(".mpd") else "video/mp4" if path.endswith(".mp4") else "application/octet-stream")
         byte_range = self.headers.get("Range", "")
@@ -756,6 +764,77 @@ class TransferFeatures(unittest.TestCase):
 
     def test_ftp_without_mdtm_restarts_safely(self):
         self.ftp_changed(no_mdtm=True)
+
+    def test_curl_fetches_literal_bracket_url_without_glob_expansion(self):
+        source=self.root/"source";source.mkdir()
+        for name, body in [("file[1-2].bin",b"literal resource"),("file1.bin",b"wrong one"),("file2.bin",b"wrong two")]:
+            (source/name).write_bytes(body)
+        with serving(HTTP,requests=[],body=BODY,etag='"v1"',root=source) as server, Engine(self.root/"state") as engine:
+            engine.send("add",request=dict(self.request(server,authMethod="basic"),url=address(server,path="file[1-2].bin")))
+            self.complete(engine.done(),b"literal resource")
+            self.assertTrue(server.requests)
+            self.assertTrue(all(urllib.parse.unquote(urllib.parse.urlsplit(path).path)=="/file[1-2].bin" for path,_ in server.requests))
+
+    def test_recent_last_modified_cannot_mix_versions_in_either_transport(self):
+        for method in ("auto","basic"):
+            with self.subTest(method=method), serving(HTTP,requests=[],body=b"A"*len(BODY),etag="",slow=True,delay=.04,
+                    extra_headers={"Last-Modified":email.utils.formatdate(time.time(),usegmt=True)}) as server:
+                state=self.root/method
+                with Engine(state) as engine:
+                    engine.send("add",request=self.request(server,authMethod=method,connections=1))
+                    row=engine.row(lambda r:r["received"]>16384 and r["status"]=="downloading")
+                    engine.send("pause",id=row["id"]);engine.row(lambda r:r["status"]=="paused")
+                server.body=b"B"*len(BODY)
+                with Engine(state) as engine:
+                    engine.send("resume",id=row["id"])
+                    self.complete(engine.done(),b"B"*len(BODY))
+
+    def test_aged_last_modified_can_resume_both_transports(self):
+        for method in ("auto","basic"):
+            with self.subTest(method=method), serving(HTTP,requests=[],body=BODY,etag="",slow=True,delay=.04,
+                    extra_headers={"Last-Modified":email.utils.formatdate(time.time()-3600,usegmt=True)}) as server:
+                state=self.root/method
+                with Engine(state) as engine:
+                    engine.send("add",request=self.request(server,authMethod=method,connections=1))
+                    row=engine.row(lambda r:r["received"]>16384 and r["status"]=="downloading")
+                    self.assertTrue(row["resumable"])
+                    engine.send("pause",id=row["id"]);engine.row(lambda r:r["status"]=="paused")
+                with Engine(state) as engine:
+                    engine.send("resume",id=row["id"]);self.complete(engine.done())
+                self.assertTrue(any(int(re.match(r"bytes=(\d+)-",h["Range"])[1])>0 for _,h in server.requests if h.get("Range")))
+
+    def test_legacy_date_partials_without_strength_evidence_are_not_adopted(self):
+        for method in ("auto","basic"):
+            with self.subTest(method=method), serving(HTTP,requests=[],body=BODY,etag="",slow=True,delay=.04,
+                    extra_headers={"Last-Modified":email.utils.formatdate(time.time()-3600,usegmt=True)}) as server:
+                state=self.root/method
+                with Engine(state) as engine:
+                    engine.send("add",request=self.request(server,authMethod=method,connections=1))
+                    row=engine.row(lambda r:r["received"]>16384 and r["status"]=="downloading")
+                    engine.send("pause",id=row["id"]);engine.row(lambda r:r["status"]=="paused")
+                if method=="auto":
+                    path=state/"queue.json";record=json.loads(path.read_text())
+                    record["downloads"][0].pop("dateValidatorStrong")
+                else:
+                    path=state/row["id"]/"transfer/resume.json";record=json.loads(path.read_text());record.pop("dateStrong")
+                path.write_text(json.dumps(record))
+                with Engine(state) as engine:
+                    engine.send("resume",id=row["id"]);result=engine.done()
+                    self.assertEqual(result["status"],"error")
+                    self.assertFalse(Path(result["path"]).exists())
+                    self.assertIn("date-validated" if method == "auto" else "saved resource validators",result["error"])
+
+    def test_curl_head_completes_without_waiting_for_advertised_body(self):
+        worker=runpy.run_path(str(ROOT/"src/mediaworker.py"))
+        with serving(HTTP,requests=[],body=BODY,etag='"v1"') as server:
+            config=dict(url=address(server),directory=str(self.root),curl=shutil.which("curl"),timeoutSeconds=1)
+            start=time.monotonic()
+            status,fields,body,_=worker["CurlHTTP"](config,{}).fetch(address(server),method="HEAD")
+            with body:
+                self.assertEqual(body.read(),b"")
+            self.assertEqual(status,200)
+            self.assertEqual(fields["Content-Length"],"123")
+            self.assertLess(time.monotonic()-start,1)
 
     def test_curl_http_pause_restart_and_changed_validator(self):
         for changed in (False, True):

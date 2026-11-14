@@ -49,3 +49,5 @@ Source and proxy credentials are configured separately and passed through privat
 `tests/run_transfer_features` exercises real Basic and Digest challenges, an isolated Kerberos KDC, NTLMv2 response proofs, encrypted proxy trust, independent proxy and source authentication, FTP REST recovery, and SOCKS-proxied direct media, HLS and DASH. It compares decoded media frames and checks credential scoping. Kerberos fixtures require `krb5kdc`, `kadmin.local`, `kinit`, and the GSS library. The normal package needs configured tickets only when the user selects Kerberos.
 
 MMS is unsupported. Installed FFmpeg's `mmsh` and `mmst` handlers do not establish a tested, origin-scoped `mms://` implementation. Media pause/restart and live-stream limits remain as described above.
+
+The transfer adapter disables curl URL globbing, so brackets in a queued URL cannot select different resources. HEAD uses curl's no-body handling. Date-only HTTP resume requires Last-Modified to predate the response Date by at least 60 seconds. Recent dates fall back to a fresh serial transfer; old saved partials without recorded date strength are not reused.

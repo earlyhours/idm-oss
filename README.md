@@ -90,6 +90,7 @@ The checklist below records the project's tested behavior. The original 70 reque
 
 Additional parity checklist, separate from the older 70-item ledger:
 
+- [x] Custom categories, extension or exact-origin rules, and per-category destinations. [Tests](tests/category_tests.cpp).
 - [x] Individual-file periodic synchronization with remote validators, retained completed entries, atomic replacement and protection for local edits. [Tests](tests/automation_sync_tests.cpp).
 - [x] Received-byte quota per configurable period, persisted across restart with automatic pause/resume. Buffered traffic, retries, media buffering and FTP verification can exceed the allowance; this is not a strict network traffic meter. [Tests](tests/automation_sync_tests.cpp).
 - [x] One-time and periodic grabber projects with start/stop dates. [Tests](tests/automation_sync_tests.cpp).
@@ -107,6 +108,8 @@ Additional parity checklist, separate from the older 70-item ledger:
 - [ ] Signed Firefox distribution. Normal persistent installation still needs Mozilla signing or an appropriate developer build.
 - [ ] Complete original IDM language catalogs, toolbar skin compatibility, legacy MMS, Windows application interception and modem management.
 - [ ] Direct feature-by-feature and speed comparison against original Windows IDM. No working Windows IDM environment is available in this run.
+
+Use **Tasks > Custom categories** to add category rules and default folders. Explicit destinations and site folders take priority. Changing a category rule updates classification without moving existing files.
 
 Use **View > Customize toolbar and columns**, **Options > General** for login startup and weekly checks, and **Help > Check for updates** for release information. **Options > Browser** can register an explicit `idm-native://download/?url=...` desktop URL handler.
 
@@ -189,7 +192,7 @@ Queue metadata and partial data normally live in `~/.local/share/idm-native/idm-
 
 Queue records and working files use owner-only permissions because URLs and headers can contain credentials. Existing destination files are preserved; collisions receive safe suffixes. Removing a queue entry keeps completed files. Final publication requires hard-link support and temporary space to assemble parts.
 
-HTTP byte-range resume requires a stable validator and matching responses. Changed resources are rejected before mixing bytes. FTP resume uses stable SIZE/MDTM metadata, REST, and a full verification download before publication. Media restarts safely from zero. HTTP and HTTPS proxies and SOCKS5 support file and media transfers. Explicit HTTP authentication and encrypted proxies use curl with one file connection. Changing between Qt and curl when partials exist requires a new job.
+HTTP byte-range resume requires a strong ETag or a Last-Modified timestamp at least 60 seconds older than the response Date, plus matching responses. Legacy date-only partials without recorded strength are preserved but require a new download. Changed resources are rejected before mixing bytes. FTP resume uses stable SIZE/MDTM metadata, REST, and a full verification download before publication. Media restarts safely from zero. HTTP and HTTPS proxies and SOCKS5 support file and media transfers. Explicit HTTP authentication and encrypted proxies use curl with one file connection. Changing between Qt and curl when partials exist requires a new job.
 
 ## Command line
 

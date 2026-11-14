@@ -12,6 +12,7 @@ bin/test-automation
 bin/test-automation-adversarial
 bin/test-automation-sync
 bin/test-automation-ui
+bin/test-categories
 bin/test-tls
 tests/run_transfer_features
 bin/test-features

@@ -12,6 +12,7 @@ import time
 import base64
 import ctypes
 import email.parser
+import email.utils
 import re
 import tempfile
 import importlib
@@ -130,7 +131,7 @@ def curl_transfer(config, settings, output, headers=None, progress=None):
     if headers is not None:
         private_file(headers)
         settings.append("dump-header = " + curl_quote(headers))
-    with subprocess.Popen([config["curl"], "-q", "--config", "-"], stdin=subprocess.PIPE,
+    with subprocess.Popen([config["curl"], "-q", "--globoff", "--config", "-"], stdin=subprocess.PIPE,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
         process.stdin.write(("\n".join(settings) + "\n").encode())
         process.stdin.close()
@@ -152,7 +153,7 @@ def response_headers(path):
         raise ValueError("Missing HTTP response")
     status, fields = blocks[-1].split(b"\r\n", 1)
     fields = email.parser.BytesParser().parsebytes(fields)
-    for key in ("ETag", "Last-Modified", "Content-Range", "Content-Encoding", "Location"):
+    for key in ("ETag", "Last-Modified", "Date", "Content-Range", "Content-Encoding", "Location"):
         if len(fields.get_all(key, [])) > 1:
             raise ValueError("Ambiguous response headers")
     return int(status.split()[1]), fields
@@ -175,7 +176,7 @@ class CurlHTTP:
                 scoped = scope_headers(headers or {}, url, self.source, self.context)
                 scoped["Accept-Encoding"] = "identity"
                 settings = curl_settings(self.config, url, same_origin)
-                settings += ["request = " + curl_quote(method)]
+                settings += ["head"] if method == "HEAD" else ["request = " + curl_quote(method)]
                 settings += ["header = " + curl_quote(key + ": " + value) for key, value in scoped.items()]
                 if data is not None:
                     payload = Path(scratch.name) / "data"
@@ -183,6 +184,8 @@ class CurlHTTP:
                     settings += ["data-binary = " + curl_quote("@" + str(payload))]
                 curl_transfer(self.config, settings, body, dump, progress)
                 status, fields = response_headers(dump)
+                if method == "HEAD":
+                    body.write_bytes(b"")
                 if status not in (301, 302, 303, 307, 308):
                     stream = body.open("rb")
                     return status, fields, stream, url
@@ -211,6 +214,8 @@ def run_http(config):
         shutil.rmtree(stale)
     transport = CurlHTTP(config, config.get("headers", {}))
     saved = json.loads(record.read_text()) if record.exists() else None
+    if saved and saved.get("header") == "Last-Modified" and saved.get("dateStrong") is not True:
+        raise ValueError("Old date-validated partials cannot be verified safely; start a new download")
 
     def absorb():
         if not incoming.exists():
@@ -278,6 +283,14 @@ def run_http(config):
             total = int(match[1])
             header = "ETag" if re.fullmatch(r'"[^"\x00-\x20\x7f]*"', fields.get("ETag", "")) else "Last-Modified"
             validator = fields.get(header, "")
+            if header == "Last-Modified":
+                try:
+                    modified = email.utils.parsedate_to_datetime(validator)
+                    response_date = email.utils.parsedate_to_datetime(fields.get("Date", ""))
+                    if (response_date - modified).total_seconds() < 60:
+                        validator = ""
+                except (ValueError, TypeError, OverflowError):
+                    validator = ""
             if not validator:
                 if offset:
                     raise ValueError("Missing resume validator")
@@ -293,7 +306,7 @@ def run_http(config):
                     raise ValueError("Changed resume resource")
                 if offset > total:
                     raise ValueError("Oversized partial")
-                saved = dict(url=config["url"], total=total, header=header, validator=validator, offset=offset)
+                saved = dict(url=config["url"], total=total, header=header, validator=validator, offset=offset, dateStrong=header == "Last-Modified")
                 save_metadata(record, saved)
                 emit(type="metadata", resumable=True, httpStatus=206)
                 if offset < total:

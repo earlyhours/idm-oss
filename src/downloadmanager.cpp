@@ -98,6 +98,7 @@ struct DownloadManager::Impl {
     struct Job {
         QString id, url, path, status = "paused", error, title, pageUrl, description;
         QString format, authMethod = "auto";
+        bool dateValidatorStrong = false;
         bool workerResumable = false;
         QString created = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
         QVariantMap headers;
@@ -171,7 +172,7 @@ struct DownloadManager::Impl {
             rows.append(QJsonObject{{"id", j->id}, {"url", j->url}, {"path", j->path}, {"status", j->status}, {"error", j->error},
                         {"connections", j->connections}, {"timeoutSeconds", j->timeoutSeconds}, {"rateLimitBytes", QString::number(j->rateLimitBytes)},
                         {"workerResumable",j->workerResumable},{"authMethod",j->authMethod},{"username",j->username},{"password",j->password},{"proxy",QJsonObject::fromVariantMap(j->proxy)}, {"total", QString::number(j->total)}, {"ranged", j->ranged},
-                        {"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts},
+                        {"dateValidatorStrong",j->dateValidatorStrong},{"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts},
                         {"headers", QJsonObject::fromVariantMap(j->headers)}, {"created", j->created}, {"title", j->title}, {"pageUrl", j->pageUrl},
                         {"description", j->description}, {"format", j->format}, {"media", j->media}, {"mediaReceived", QString::number(received(*j))}});
         }
@@ -207,6 +208,7 @@ struct DownloadManager::Impl {
             j->username = o.value("username").toString(); j->password = o.value("password").toString(); j->proxy = o.value("proxy").toObject().toVariantMap();
             j->validator = QByteArray::fromBase64(o.value("validator").toString().toLatin1());
             j->validatorHeader = o.value("validatorHeader").toString().toLatin1();
+            j->dateValidatorStrong = o.value("dateValidatorStrong").toBool(false);
             j->ranged = o.value("ranged").toBool();
             j->workerResumable = o.value("workerResumable").toBool();
             j->status = o.value("status").toString() == "complete" ? "complete" : "paused";
@@ -302,7 +304,10 @@ struct DownloadManager::Impl {
         auto value = r->rawHeader("ETag");
         if (!value.isEmpty() && !value.startsWith("W/") && value.startsWith('"') && value.endsWith('"')) { header = "ETag"; return value; }
         value = r->rawHeader("Last-Modified");
-        if (!value.isEmpty()) { header = "Last-Modified"; return value; }
+        const auto modified = QDateTime::fromString(QString::fromLatin1(value).replace(" GMT", " +0000"), Qt::RFC2822Date);
+        const auto date = QDateTime::fromString(QString::fromLatin1(r->rawHeader("Date")).replace(" GMT", " +0000"), Qt::RFC2822Date);
+        // A date validator is strong only when it predates the response by at least 60 seconds.
+        if (modified.isValid() && date.isValid() && modified.secsTo(date) >= 60) { header = "Last-Modified"; return value; }
         header.clear(); return {};
     }
     bool openPart(const std::shared_ptr<Job> &j, int i, bool append) {
@@ -510,6 +515,7 @@ struct DownloadManager::Impl {
         if (j->status == "complete" || j->status == "downloading" || j->status == "probing") return;
         if (QFileInfo::exists(j->path) || QFileInfo(j->path).isSymLink()) { fail(j,q->tr("Destination already exists. Choose a different filename.")); return; }
         if (j->media || !httpUrl(QUrl(j->url)) || curlHttp(*j)) { startWorker(j); return; }
+        if (j->ranged && received(*j)>0 && j->validatorHeader=="Last-Modified" && !j->dateValidatorStrong) { fail(j,q->tr("Old date-validated partials cannot be verified safely. Start a new download.")); return; }
         if (QFileInfo::exists(root+"/"+j->id+"/transfer/resume.json")) { fail(j,q->tr("Saved worker partials need their original transport. Start a new download to change authentication transport.")); return; }
         j->status = "probing"; j->error.clear(); j->clock.start(); j->budgetClock.start();j->tokens=0; save(); emit q->changed();
         auto req = request(*j); req.setRawHeader("Range", "bytes=0-0");
@@ -578,7 +584,7 @@ struct DownloadManager::Impl {
                 const int count = int(std::min<qint64>(j->connections,total));
                 for (int i = 0; i < count; ++i) { auto p = std::make_shared<Part>(); p->first = total / count * i; p->last = i == count-1 ? total-1 : total/count*(i+1)-1; j->parts.append(p); }
             }
-            j->ranged = true; j->total = total; j->validator = value; j->validatorHeader = header; startRanges(j);
+            j->ranged = true; j->total = total; j->validator = value; j->validatorHeader = header; j->dateValidatorStrong = header=="Last-Modified"; startRanges(j);
         });
     }
     void startSerial(const std::shared_ptr<Job> &j) {
@@ -617,7 +623,7 @@ QVariantList DownloadManager::downloads() const {
         const qint64 eta = j->status != "downloading" ? -1 : j->media ? j->mediaEta : (speed > 0 && j->total >= bytes ? qint64((j->total-bytes)/speed) : -1);
         result.append(QVariantMap{{"id",j->id},{"url",j->url},{"path",j->path},{"name",QFileInfo(j->path).fileName()},{"status",j->status},{"received",bytes},{"total",j->total},
                      {"speed",j->status == "downloading" ? speed : 0},{"connections",j->ranged ? j->connections : 1},{"error",j->error},{"media",j->media},
-                     {"category",category(j->path,j->media)},{"created",j->created},{"resumable",!j->media && ((j->ranged && !j->validator.isEmpty()) || j->workerResumable)},{"authMethod",j->authMethod},
+                     {"category",category(j->path,j->media)},{"created",j->created},{"resumable",!j->media && ((j->ranged && !j->validator.isEmpty() && (j->validatorHeader!="Last-Modified" || j->dateValidatorStrong)) || j->workerResumable)},{"authMethod",j->authMethod},
                      {"parts",parts},{"eta",eta},{"httpStatus",j->httpStatus},{"rateLimitBytes",j->rateLimitBytes},{"timeoutSeconds",j->timeoutSeconds},{"description",j->description},{"title",j->title},{"format",j->format}});
     }
     return result;
