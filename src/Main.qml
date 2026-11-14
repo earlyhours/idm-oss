@@ -82,21 +82,83 @@ ApplicationWindow {
         })
     }
     readonly property bool menusOpen: tasksMenu.visible || downloadsMenu.visible || viewMenu.visible || helpMenu.visible || rowMenu.visible || queueMenu.visible || moreActions.visible
-    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible || automationProjects.visible
+    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible || automationProjects.visible || layoutDialog.visible || updatesDialog.visible
     readonly property bool bridgeAvailable: typeof browserBridge !== "undefined" && browserBridge.available
     readonly property string bridgeError: typeof browserBridge !== "undefined" ? browserBridge.error : ""
-    property bool showDetailsColumns: false
+    readonly property bool desktopAvailable: typeof desktop !== "undefined"
+    property bool fallbackDetailsColumns: false
+    readonly property bool showDetailsColumns: desktopAvailable ? ["eta","created","description"].every(k => !desktop.layout.columnHidden.includes(k)) : fallbackDetailsColumns
+    readonly property var toolbarCatalog: [
+        {key:"resume",label:qsTr("Resume"),icon:"resume",object:"resumeButton"},
+        {key:"pause",label:qsTr("Pause"),icon:"stop",object:"pauseButton"},
+        {key:"delete",label:qsTr("Delete"),icon:"delete",object:"deleteButton"},
+        {key:"details",label:qsTr("Details"),icon:"info",object:"selectionDetailsButton"},
+        {key:"startQueue",label:qsTr("Start Queue"),icon:"queue",object:"startQueueButton"},
+        {key:"add",label:qsTr("Add download"),icon:"add",object:"addDownloadButton"},
+        {key:"stopAll",label:qsTr("Stop All"),icon:"stopall"},
+        {key:"stopQueue",label:qsTr("Stop Queue"),icon:"queueStop"},
+        {key:"scheduler",label:qsTr("Scheduler"),icon:"queue"},
+        {key:"options",label:qsTr("Options"),icon:"options"}
+    ]
+    function layoutItems(kind) {
+        let catalog = kind === "toolbar" ? toolbarCatalog : columnCatalog
+        if (!desktopAvailable) return catalog
+        return desktop.layout[kind+"Order"].map(k => catalog.find(c => c.key === k)).filter(Boolean)
+    }
+    function layoutHidden(kind, key) { return desktopAvailable ? desktop.layout[kind+"Hidden"].includes(key) : kind === "toolbar" && ["stopAll","stopQueue","scheduler","options"].includes(key) }
+    function changeLayout(kind, key, shown, delta) {
+        let order = desktop.layout[kind+"Order"].slice(), hidden = desktop.layout[kind+"Hidden"].slice()
+        if (delta) {
+            let index = order.indexOf(key), target = index+delta
+            if (target < 0 || target >= order.length) return
+            order.splice(index,1); order.splice(target,0,key)
+        } else hidden = shown ? hidden.filter(k => k !== key) : hidden.concat([key])
+        if (!desktop.setLayout(kind,order,hidden)) lastError=desktop.error
+    }
+    function toggleDetailsColumns(shown) {
+        if (!desktopAvailable) { fallbackDetailsColumns=shown; return }
+        let extra=["eta","created","description"], hidden=desktop.layout.columnHidden.filter(k => !extra.includes(k))
+        if (!shown) hidden=hidden.concat(extra)
+        if (!desktop.setLayout("column",desktop.layout.columnOrder,hidden)) lastError=desktop.error
+    }
+    function toolbarVisible(key) {
+        if (layoutHidden("toolbar", key)) return false
+        if (["resume","pause","delete","details"].includes(key)) return !!selected
+        return key !== "startQueue" || filter.startsWith("queue:")
+    }
+    function toolbarEnabled(key) {
+        if (key === "resume") return !!selected && !running(selected) && selected.status !== "complete"
+        if (key === "pause") return running(selected)
+        return key !== "scheduler" || automationAvailable
+    }
+    function toolbarAction(key) {
+        if (key === "resume") controller.resume(selectedId)
+        else if (key === "pause") controller.pause(selectedId)
+        else if (key === "delete") deleteSelected()
+        else if (key === "details") openTransfer()
+        else if (key === "startQueue") startQueue()
+        else if (key === "add") newDownload()
+        else if (key === "stopAll") controller.pauseAll()
+        else if (key === "stopQueue") stopQueue()
+        else if (key === "scheduler") schedulerDialog.open()
+        else if (key === "options") optionsDialog.open()
+    }
+    function presentUrl(url) {
+        infoDialog.close(); droppedUrls=[]; pendingRequest=({})
+        loginInput.clear(); passwordInput.clear(); useAuthorization.checked=false; mediaInput.checked=false
+        urlInput.text=url; newDownload()
+    }
     readonly property real primaryTableWidth: Math.max(548, tableScroll.width)
-    readonly property var columns: [
+    readonly property var columnCatalog: [
         {key:"name", label:qsTr("File"), width:primaryTableWidth-336},
         {key:"status",label:qsTr("Progress"),width:144},
         {key:"total",label:qsTr("Size"),width:88},
-        {key:"speed",label:qsTr("Speed"),width:104}
-    ].concat(showDetailsColumns ? [
+        {key:"speed",label:qsTr("Speed"),width:104},
         {key:"eta",label:qsTr("Time left"),width:88},
         {key:"created",label:qsTr("Date added"),width:160},
         {key:"description",label:qsTr("Description"),width:240}
-    ] : [])
+    ]
+    readonly property var columns: desktopAvailable ? layoutItems("column").filter(c => !layoutHidden("column", c.key)) : columnCatalog.filter(c => showDetailsColumns || !["eta","created","description"].includes(c.key))
     function navigationCount(key) {
         if (key === "queues") return ""
         let policies = win.automationAvailable ? automation.jobPolicies : {}
@@ -419,18 +481,27 @@ ApplicationWindow {
         id: tool
         property string kind: "add"
         property bool showLabel: false
-        implicitWidth: showLabel ? contentItem.implicitWidth+20 : 36; implicitHeight: 36
+        property bool prominent: false
+        implicitWidth: prominent ? Math.max(132,contentItem.implicitWidth+28) : showLabel ? contentItem.implicitWidth+20 : 36; implicitHeight: 36
         Accessible.name: text
         padding: 6; hoverEnabled: true
-        background: Rectangle { color: tool.down ? win.selection : tool.hovered ? win.hoverSurface : "transparent"; border.color: tool.activeFocus ? theme.accent : "transparent"; radius: win.controlRadius }
+        background: Rectangle { color: tool.prominent ? win.accent : tool.down ? win.selection : tool.hovered ? win.hoverSurface : "transparent"; border.color: tool.activeFocus ? theme.accent : "transparent"; radius: win.controlRadius }
         contentItem: RowLayout {
             spacing: 7; opacity: tool.enabled ? 1 : .3
-            AppIcon { kind: tool.kind; tint: win.muted; Layout.preferredWidth: 17; Layout.preferredHeight: 17; Layout.alignment: Qt.AlignVCenter }
-            Text { visible: tool.showLabel; text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: win.ink; Layout.alignment: Qt.AlignVCenter }
+            AppIcon { visible: !tool.prominent; kind: tool.kind; tint: win.muted; Layout.preferredWidth: 17; Layout.preferredHeight: 17; Layout.alignment: Qt.AlignVCenter }
+            Text { visible: tool.showLabel || tool.prominent; text: tool.text; font.pixelSize: 12; font.weight: Font.Medium; color: tool.prominent ? "#1a1008" : win.ink; Layout.alignment: Qt.AlignVCenter }
         }
         ToolTip.visible: hovered
         ToolTip.delay: 500
         ToolTip.text: text
+    }
+    component ToolbarTool: Tool {
+        property string actionKey
+        readonly property var actionInfo: win.toolbarCatalog.find(c => c.key === actionKey)
+        objectName: actionInfo.object || "toolbar-"+actionKey
+        text: actionInfo.label; kind: actionInfo.icon; prominent: actionKey === "add"
+        visible: win.toolbarVisible(actionKey); enabled: win.toolbarEnabled(actionKey)
+        onClicked: win.toolbarAction(actionKey)
     }
     menuBar: MenuBar {
         objectName: "mainMenuBar"
@@ -478,13 +549,15 @@ ApplicationWindow {
             Action { text: qsTr("Options"); icon.source: win.iconSource("options", win.muted); onTriggered: optionsDialog.open() }
         }
         IdmMenu { appWindow: win; id: viewMenu; title: qsTr("View")
-            Action { objectName: "advancedColumnsAction"; text: qsTr("More columns"); checkable: true; checked: win.showDetailsColumns; onTriggered: win.showDetailsColumns = checked }
+            Action { objectName: "advancedColumnsAction"; text: qsTr("More columns"); checkable: true; checked: win.showDetailsColumns; onTriggered: win.toggleDetailsColumns(checked) }
+            Action { objectName: "customizeLayoutAction"; text: qsTr("Customize toolbar and columns"); enabled: win.desktopAvailable; onTriggered: layoutDialog.open() }
             Action { text: qsTr("Categories"); icon.source: win.iconSource("folder", win.muted); checkable: true; checked: win.categoriesVisible; onTriggered: win.categoriesVisible = checked }
             Action { text: qsTr("Download progress"); icon.source: win.iconSource("download", win.muted); enabled: !!win.selected; onTriggered: win.openTransfer() }
         }
         IdmMenu { appWindow: win; id: helpMenu; title: qsTr("Help")
             IdmMenuItem { appWindow: win; shortcutHint: "F1"; text: qsTr("Keyboard shortcuts"); icon.source: win.iconSource("file", win.muted); onTriggered: shortcutsDialog.open() }
             Action { text: qsTr("Browser integration"); icon.source: win.iconSource("download", win.muted); onTriggered: { optionsTabs.currentIndex = 6; optionsDialog.open() } }
+            Action { objectName: "checkUpdatesAction"; text: qsTr("Check for updates"); enabled: win.desktopAvailable; onTriggered: { updatesDialog.open(); desktop.checkForUpdates() } }
             Action { text: qsTr("About"); icon.source: win.iconSource("file", win.muted); onTriggered: aboutDialog.open() }
         }
     }
@@ -592,7 +665,7 @@ ApplicationWindow {
                 RowLayout {
                     objectName: "downloadToolbar"
                     anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 8
-                    ColumnLayout {
+                    property ColumnLayout heading: ColumnLayout {
                         Layout.fillWidth: true; spacing: 5
                         Label {
                             text: win.filter === "all" ? qsTr("Downloads") : win.filter.startsWith("queue:") ? win.filter.slice(6) : win.filter === "unfinished" ? qsTr("Unfinished") : win.filter === "finished" ? qsTr("Finished") : qsTr(win.filter)
@@ -605,13 +678,19 @@ ApplicationWindow {
                             text: qsTr("%1 active").arg(activeCount); font.pixelSize: 12; color: win.muted
                         }
                     }
-                    Tool { objectName: "resumeButton"; text: qsTr("Resume"); kind: "resume"; visible: !!win.selected; enabled: !!win.selected && !win.running(win.selected) && win.selected.status !== "complete"; onClicked: win.controller.resume(win.selectedId) }
-                    Tool { text: qsTr("Pause"); kind: "stop"; visible: !!win.selected; enabled: win.running(win.selected); onClicked: win.controller.pause(win.selectedId) }
-                    Tool { text: qsTr("Delete"); kind: "delete"; visible: !!win.selected; onClicked: win.deleteSelected() }
-                    Tool { objectName: "selectionDetailsButton"; text: qsTr("Details"); kind: "info"; visible: !!win.selected; onClicked: win.openTransfer() }
-                    Tool { objectName: "startQueueButton"; text: qsTr("Start Queue"); kind: "queue"; visible: win.filter.startsWith("queue:"); onClicked: win.startQueue() }
-                    AppButton { objectName: "addDownloadButton"; primary: true; text: qsTr("Add download"); implicitHeight: 36; implicitWidth: Math.max(132, contentItem.implicitWidth+28); onClicked: win.newDownload() }
-                    Tool {
+                    property ToolbarTool resumeTool: ToolbarTool { actionKey: "resume" }
+                    property ToolbarTool pauseTool: ToolbarTool { actionKey: "pause" }
+                    property ToolbarTool deleteTool: ToolbarTool { actionKey: "delete" }
+                    property ToolbarTool detailsTool: ToolbarTool { actionKey: "details" }
+                    property ToolbarTool startQueueTool: ToolbarTool { actionKey: "startQueue" }
+                    property ToolbarTool addTool: ToolbarTool { actionKey: "add" }
+                    property ToolbarTool stopAllTool: ToolbarTool { actionKey: "stopAll" }
+                    property ToolbarTool stopQueueTool: ToolbarTool { actionKey: "stopQueue" }
+                    property ToolbarTool schedulerTool: ToolbarTool { actionKey: "scheduler" }
+                    property ToolbarTool optionsTool: ToolbarTool { actionKey: "options" }
+                    readonly property var buttons: ({resume:resumeTool,pause:pauseTool,delete:deleteTool,details:detailsTool,startQueue:startQueueTool,add:addTool,stopAll:stopAllTool,stopQueue:stopQueueTool,scheduler:schedulerTool,options:optionsTool})
+                    children: [heading].concat(win.layoutItems("toolbar").map(c => buttons[c.key])).concat([moreButton])
+                    property Tool moreTool: Tool {
                         id: moreButton; objectName: "moreActionsButton"
                         text: qsTr("More"); kind: "more"
                         onClicked: moreActions.popup(moreButton, 0, moreButton.height)
@@ -642,6 +721,7 @@ ApplicationWindow {
                             Repeater { model: win.columns
                                 delegate: Rectangle {
                                     required property var modelData
+                                    objectName: "tableHeader-"+modelData.key
                                     width: modelData.width; height: 34; color: headerMouse.containsMouse ? win.hoverSurface : win.canvas
                                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.edge }
                                     Text { color: win.muted; anchors.fill: parent; anchors.leftMargin: modelData.key === "name" ? 46 : 12; anchors.rightMargin: 12; verticalAlignment: Text.AlignVCenter; horizontalAlignment: ["total","eta","speed"].includes(modelData.key) ? Text.AlignRight : Text.AlignLeft; font.pixelSize: 11; font.weight: Font.Medium; text: modelData.label + (win.sortKey === modelData.key ? (win.descending ? "  ↓" : "  ↑") : "") }
@@ -702,7 +782,16 @@ ApplicationWindow {
                                     }
                                 }
                                 MouseArea {
-                                    id: rowMouse; hoverEnabled: true
+                                    id: rowMouse; objectName: "rowMouse-"+row.modelData.id; hoverEnabled: true
+                                    property point pressPoint
+                                    property bool dragStarted: false
+                                    onPressed: mouse => { pressPoint=Qt.point(mouse.x,mouse.y); dragStarted=false; win.selectedId=row.modelData.id }
+                                    onPositionChanged: mouse => {
+                                        if (pressed && (pressedButtons & Qt.LeftButton) && !dragStarted && win.desktopAvailable && row.modelData.status === "complete" && Math.hypot(mouse.x-pressPoint.x,mouse.y-pressPoint.y) >= desktop.dragDistance) {
+                                            dragStarted=true
+                                            desktop.dragCompleted(row.modelData,win)
+                                        }
+                                    }
                                     anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: mouse => {
                                         win.selectedId = row.modelData.id
@@ -1018,6 +1107,13 @@ ApplicationWindow {
                     AppCheckBox { id: clipboardCheck; text: qsTr("Watch clipboard"); ToolTip.visible: hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Monitor clipboard for download links") }
                     AppCheckBox { id: notificationsCheck; text: qsTr("Completion notifications") }
                     AppCheckBox { id: soundCheck; text: qsTr("Completion sound") }
+                    AppCheckBox {
+                        objectName: "autostartCheck"; text: qsTr("Start in background when I log in"); enabled: win.desktopAvailable
+                        checked: win.desktopAvailable && desktop.autostart
+                        onClicked: { if (!desktop.setAutostart(checked)) { win.lastError=desktop.error; checked=desktop.autostart } }
+                    }
+                    Label { text: qsTr("Login startup is saved immediately."); font.pixelSize: 11; color: win.muted }
+                    AppButton { text: qsTr("Customize toolbar and columns"); enabled: win.desktopAvailable; onClicked: layoutDialog.open() }
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
@@ -1137,6 +1233,11 @@ ApplicationWindow {
                         AppButton { objectName: "browserInstallButton"; text: qsTr("Install browser integration"); enabled: typeof browserBridge !== "undefined"; onClicked: { let path = browserBridge.install(); win.installMessage = path ? qsTr("Extension folder: ")+path : "" } }
                         AppButton { text: qsTr("Open extension folder"); enabled: typeof browserBridge !== "undefined" && browserBridge.extensionDirectory.length > 0; onClicked: Qt.openUrlExternally("file://"+browserBridge.extensionDirectory) }
                     }
+                    AppButton {
+                        objectName: "installUrlHandlerButton"; text: qsTr("Enable desktop URL handler"); enabled: win.desktopAvailable
+                        onClicked: { if (desktop.installUrlHandler()) win.installMessage=qsTr("URL handler enabled. Use idm-native://download/?url= followed by a percent-encoded URL to confirm a download."); else win.lastError=desktop.error }
+                    }
+                    Label { text: qsTr("Opt-in URL handling opens the Add URL dialog. Your default browser stays unchanged. Other apps must send a URL to IDM Native; their downloads are not intercepted."); wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 11; color: win.muted }
                     Label { id: integrationMessage; text: win.bridgeError || win.installMessage; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     FormDisclosure { id: browserSetup; objectName: "browserSetupDisclosure"; text: qsTr("Browser setup instructions"); Layout.fillWidth: true }
                     Label { objectName: "browserSetupInstructions"; visible: browserSetup.checked; text: qsTr("Chromium: open Extensions, enable Developer mode, choose Load unpacked, and select the extension folder. Firefox: follow the included browser setup instructions."); font.pixelSize: 12; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
@@ -1287,6 +1388,66 @@ ApplicationWindow {
                     Label { text: modelData.keys; font.family: win.mono; font.pixelSize: 12; color: win.muted; Layout.preferredWidth: 100 }
                     Label { text: modelData.action; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                 }
+            }
+        }
+    }
+    NativeDialog {
+        id: layoutDialog; objectName: "layoutDialog"; title: qsTr("Toolbar and columns"); width: 700; height: Math.min(540,win.contentItem.height-20)
+        anchors.centerIn: parent; modal: true; standardButtons: Dialog.Close
+        ColumnLayout {
+            anchors.fill: parent
+            Label { text: qsTr("Changes are saved immediately. Use arrows to reorder items."); wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                Repeater {
+                    model: ["toolbar","column"]
+                    delegate: ColumnLayout {
+                        id: layoutGroup; required property string modelData
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        Label { text: layoutGroup.modelData === "toolbar" ? qsTr("Toolbar") : qsTr("Columns"); font.bold: true }
+                        ScrollView {
+                            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                            Column {
+                                width: parent.width
+                                Repeater {
+                                    model: win.layoutItems(layoutGroup.modelData)
+                                    delegate: RowLayout {
+                                        id: layoutRow; required property var modelData; required property int index
+                                        width: parent.width
+                                        AppCheckBox {
+                                            objectName: "layout-"+layoutGroup.modelData+"-"+layoutRow.modelData.key
+                                            text: layoutRow.modelData.label; checked: !win.layoutHidden(layoutGroup.modelData,layoutRow.modelData.key); Layout.fillWidth: true
+                                            onClicked: win.changeLayout(layoutGroup.modelData,layoutRow.modelData.key,checked,0)
+                                        }
+                                        AppButton { objectName: "layout-up-"+layoutGroup.modelData+"-"+layoutRow.modelData.key; text: "↑"; Accessible.name: qsTr("Move up"); enabled: layoutRow.index > 0; onClicked: win.changeLayout(layoutGroup.modelData,layoutRow.modelData.key,true,-1) }
+                                        AppButton { objectName: "layout-down-"+layoutGroup.modelData+"-"+layoutRow.modelData.key; text: "↓"; Accessible.name: qsTr("Move down"); enabled: layoutRow.index < win.layoutItems(layoutGroup.modelData).length-1; onClicked: win.changeLayout(layoutGroup.modelData,layoutRow.modelData.key,true,1) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            AppButton { objectName: "resetLayoutButton"; text: qsTr("Restore default layout"); onClicked: { if (!desktop.resetLayout()) win.lastError=desktop.error } }
+            Label { text: win.lastError; visible: text.length > 0; color: win.danger; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+        }
+    }
+    NativeDialog {
+        id: updatesDialog; objectName: "updatesDialog"; title: qsTr("Updates"); width: 600; height: Math.min(470,win.contentItem.height-20)
+        anchors.centerIn: parent; modal: true; standardButtons: Dialog.Close
+        ColumnLayout {
+            anchors.fill: parent
+            Label { text: qsTr("Installed version: %1").arg(Qt.application.version); textFormat: Text.PlainText }
+            Label { objectName: "updateStatus"; text: win.desktopAvailable ? desktop.updateStatus : ""; wrapMode: Text.WordWrap; Layout.fillWidth: true; textFormat: Text.PlainText }
+            Label { objectName: "releaseName"; text: win.desktopAvailable && desktop.release.tag ? desktop.release.tag+"  "+desktop.release.name+"  "+desktop.release.published : ""; wrapMode: Text.WordWrap; Layout.fillWidth: true; textFormat: Text.PlainText }
+            ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                TextArea { objectName: "releaseNotes"; text: win.desktopAvailable ? desktop.release.notes || "" : ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; color: win.ink; background: Item {} }
+            }
+            Label { text: qsTr("Open the release page to review installation instructions. Updates are never installed automatically."); font.pixelSize: 11; color: win.muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            RowLayout {
+                AppButton { objectName: "retryUpdateButton"; text: qsTr("Check again"); enabled: win.desktopAvailable && !desktop.checking; onClicked: desktop.checkForUpdates() }
+                AppButton { objectName: "openReleaseButton"; text: qsTr("Open release page"); enabled: win.desktopAvailable && !!desktop.release.url; onClicked: desktop.openRelease() }
             }
         }
     }

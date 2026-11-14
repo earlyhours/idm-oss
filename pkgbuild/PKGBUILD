@@ -5,6 +5,7 @@ pkgdesc='Native Omarchy download manager with parallel transfers and resume'
 arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-svg' 'xdg-desktop-portal' 'python' 'yt-dlp' 'ffmpeg' 'curl' 'clamav' 'libnotify' 'libcanberra' 'networkmanager')
+optdepends=('xdg-utils: register the optional desktop URL handler')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()

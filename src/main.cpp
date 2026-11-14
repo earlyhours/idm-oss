@@ -20,6 +20,7 @@
 #include "theme.h"
 #include "portalpicker.h"
 #include "translator.h"
+#include "desktopintegration.h"
 
 static void printJson(const QVariantMap &value, bool error = false) {
     const auto bytes = QJsonDocument(QJsonObject::fromVariantMap(value)).toJson(QJsonDocument::Compact);
@@ -39,7 +40,7 @@ int main(int argc, char **argv) {
     parser.setApplicationDescription("Native HTTP download manager for Omarchy");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("command", "open, background, download URL, browser-host, browser-install, or skill install", "[command] [URL]");
+    parser.addPositionalArgument("command", "open [URL], background, download URL, browser-host, browser-install, or skill install", "[command] [URL]");
     parser.addOptions({{{"d", "directory"}, "Download directory", "path"},
                        {{"c", "connections"}, "Parallel connections (1-16)", "count", "4"},
                        {"json", "Print machine-readable results"},
@@ -59,6 +60,10 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (command != "open" && command != "background" && command != "download" && command != "browser-host" && command != "browser-install") { parser.showHelp(1); }
+    const QUrl incomingUrl = command == "open" && args.size() == 2 ? DesktopIntegration::externalUrl(args[1]) : QUrl{};
+    if (command == "open" && (args.size() > 2 || (args.size() == 2 && incomingUrl.isEmpty()))) {
+        printJson({{"error", "Use open with a valid HTTP, HTTPS or FTP URL."}}, true); return 1;
+    }
     QString state = parser.value("state-directory");
     if (state.isEmpty()) state = qEnvironmentVariable("IDM_NATIVE_STATE_DIRECTORY");
     if (state.isEmpty()) state = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -72,7 +77,7 @@ int main(int argc, char **argv) {
         QLocalSocket existing;
         existing.connectToServer(BrowserBridge::socketPath(state));
         if (existing.waitForConnected(300)) {
-            const QByteArray message = "{\"command\":\"show\"}";
+            const QByteArray message = QJsonDocument(QJsonObject{{"command", "show"}, {"url", incomingUrl.toString(QUrl::FullyEncoded)}}).toJson(QJsonDocument::Compact);
             QByteArray bytes(4, '\0');
             qToLittleEndian<quint32>(message.size(), bytes.data());
             existing.write(bytes + message);
@@ -119,7 +124,11 @@ int main(int argc, char **argv) {
     QQuickWindow *mainWindow = nullptr;
     auto acceptRequest = [&](const QVariantMap &message) -> QVariantMap {
         if (message.value("command") == "show") {
-            if (mainWindow) { mainWindow->show(); mainWindow->raise(); mainWindow->requestActivate(); }
+            if (mainWindow) {
+                mainWindow->show(); mainWindow->raise(); mainWindow->requestActivate();
+                const auto url = DesktopIntegration::externalUrl(message.value("url").toString());
+                if (!url.isEmpty()) QMetaObject::invokeMethod(mainWindow, "presentUrl", Q_ARG(QVariant, url.toString(QUrl::FullyEncoded)));
+            }
             return {{"ok", true}};
         }
         auto add = [&](QVariantMap request) {
@@ -148,9 +157,11 @@ int main(int argc, char **argv) {
     app.installTranslator(&translator);
     Theme theme;
     PortalPicker picker;
+    DesktopIntegration desktop(state);
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("picker", &picker);
+    engine.rootContext()->setContextProperty("desktop", &desktop);
     engine.rootContext()->setContextProperty("browserBridge", &browserBridge);
     engine.rootContext()->setContextProperty("automation", &automation);
     engine.rootContext()->setContextProperty("translator", &translator);
@@ -160,6 +171,7 @@ int main(int argc, char **argv) {
     engine.load(QUrl("qrc:/Main.qml"));
     if (engine.rootObjects().isEmpty()) return 1;
     mainWindow = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    if (!incomingUrl.isEmpty()) QMetaObject::invokeMethod(mainWindow, "presentUrl", Q_ARG(QVariant, incomingUrl.toString(QUrl::FullyEncoded)));
     if (parser.isSet("smoke-test")) {
         QTimer::singleShot(1200, &app, [&] {
             auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());

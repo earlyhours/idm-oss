@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+mkdir -p "$ROOT/build/desktop-tests"
+cd "$ROOT/build/desktop-tests"
+qmake6 "$ROOT/tests/desktop_tests.pro"
+make -j2
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software ./desktop_tests "$@"
+python3 "$ROOT/tests/desktop_startup_test.py" -v
