@@ -27,7 +27,7 @@ const QStringList toolbarOrder{"resume", "pause", "delete", "details", "startQue
 const QStringList toolbarHidden{"stopAll", "stopQueue", "scheduler", "options"};
 const QStringList columnOrder{"name", "status", "total", "speed", "eta", "created", "description"};
 const QStringList columnHidden{"eta", "created", "description"};
-const QString releasePrefix = "https://github.com/earlyhours/idm-rust/releases/tag/";
+const QString releasePrefix = "https://github.com/earlyhours/idm-oss/releases/tag/";
 QStringList known(QStringList saved, const QStringList &allowed) {
     saved.removeDuplicates();
     for (auto it = saved.begin(); it != saved.end();) {
@@ -223,7 +223,7 @@ void DesktopIntegration::checkForUpdates() {
     if (pending) return;
     settings.setValue("lastUpdateCheck", QDateTime::currentDateTimeUtc()); settings.sync();
     pending = true; latest.clear(); updateMessage = tr("Checking GitHub releases..."); emit updateChanged();
-    QNetworkRequest request(QUrl("https://api.github.com/repos/earlyhours/idm-rust/releases/latest"));
+    QNetworkRequest request(QUrl("https://api.github.com/repos/earlyhours/idm-oss/releases/latest"));
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setRawHeader("User-Agent", "idm-native/" + QCoreApplication::applicationVersion().toUtf8());
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);

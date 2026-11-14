@@ -28,7 +28,7 @@ static bool writeFile(const QString &path, const QByteArray &data) {
 static QByteArray readFile(const QString &path) { QFile file(path); return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{}; }
 static QString configPath() { return qEnvironmentVariable("XDG_CONFIG_HOME"); }
 static QString dataPath() { return qEnvironmentVariable("XDG_DATA_HOME"); }
-static QByteArray releaseJson(const QString &tag = "v0.3.0", const QString &url = "https://github.com/earlyhours/idm-rust/releases/tag/v0.3.0") {
+static QByteArray releaseJson(const QString &tag = "v0.3.0", const QString &url = "https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0") {
     return QJsonDocument(QJsonObject{{"tag_name",tag},{"html_url",url},{"name","<b>Release</b>"},{"body","<img src=\"https://untrusted.example/pixel\">\nRun nothing."},{"published_at","2026-01-01T00:00:00Z"}}).toJson();
 }
 
@@ -192,8 +192,8 @@ private slots:
         QCOMPARE(release.value("notes").toString(),QString("<img src=\"https://untrusted.example/pixel\">\nRun nothing."));
         QVERIFY(!DesktopIntegration::parseRelease(releaseJson(),"0.3.0").value("newer").toBool());
         QVERIFY(!DesktopIntegration::parseRelease(releaseJson(),"0.4.0").value("newer").toBool());
-        for (const auto &url : {"https://evil.example/tag/v0.3.0","https://github.com/else/repo/releases/tag/v0.3.0", "http://github.com/earlyhours/idm-rust/releases/tag/v0.3.0", "https://github.com/earlyhours/idm-rust/releases/tag/v0.3.0?next=bad", "file:///bin/sh", "javascript:alert(1)"})
-            QCOMPARE(DesktopIntegration::parseRelease(releaseJson("v0.3.0",url),"0.2.1").value("url").toString(),QString("https://github.com/earlyhours/idm-rust/releases/tag/v0.3.0"));
+        for (const auto &url : {"https://evil.example/tag/v0.3.0","https://github.com/else/repo/releases/tag/v0.3.0", "http://github.com/earlyhours/idm-oss/releases/tag/v0.3.0", "https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0?next=bad", "file:///bin/sh", "javascript:alert(1)"})
+            QCOMPARE(DesktopIntegration::parseRelease(releaseJson("v0.3.0",url),"0.2.1").value("url").toString(),QString("https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0"));
         QVERIFY(DesktopIntegration::parseRelease("invalid", "0.2.1").isEmpty());
         QVERIFY(DesktopIntegration::parseRelease(QByteArray(512*1024+1,'x'),"0.2.1").isEmpty());
         QVERIFY(DesktopIntegration::parseRelease(releaseJson("v0.3.0-beta"),"0.2.1").isEmpty());
@@ -227,7 +227,7 @@ private slots:
         desktop.checkForUpdates(); desktop.checkForUpdates();
         QCOMPARE(network.calls,1); QVERIFY(desktop.checking());
         QTRY_VERIFY(!desktop.checking());
-        QCOMPARE(network.last.url(),QUrl("https://api.github.com/repos/earlyhours/idm-rust/releases/latest"));
+        QCOMPARE(network.last.url(),QUrl("https://api.github.com/repos/earlyhours/idm-oss/releases/latest"));
         QCOMPARE(network.last.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),int(QNetworkRequest::SameOriginRedirectPolicy));
         QCOMPARE(network.last.maximumRedirectsAllowed(),3);
         QVERIFY(desktop.release().value("newer").toBool());
@@ -327,7 +327,7 @@ private slots:
         QDesktopServices::setUrlHandler("https",&sink,"receive");
         click("openReleaseButton");
         QDesktopServices::unsetUrlHandler("https");
-        QCOMPARE(sink.url,QUrl("https://github.com/earlyhours/idm-rust/releases/tag/v0.3.0"));
+        QCOMPARE(sink.url,QUrl("https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0"));
         QVERIFY(QMetaObject::invokeMethod(named(window,"updatesDialog"),"close")); QTest::qWait(100);
         named(window,"loginInput")->setProperty("text","previous-user");
         named(window,"passwordInput")->setProperty("text","previous-secret");
