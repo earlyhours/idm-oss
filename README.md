@@ -10,7 +10,7 @@ The [70-feature ledger](docs/features.json) maps each requested capability to co
 
 ## Feature checklist and comparison
 
-The checklist below records the project's tested behavior. The original 70 requested capabilities are narrower than every feature of Windows IDM. Checked items do not imply identical behavior on every site or operating system. See the [implementation plan](docs/parity-plan.md), [per-feature evidence](docs/final-feature-audit.md), and [comparison samples](docs/download-comparison.json).
+The checklist below records the project's tested behavior. The original 70 requested capabilities are narrower than every feature of Windows IDM. Checked items do not imply identical behavior on every site or operating system. See the [review corrections](docs/parity-review.md), [implementation plan](docs/parity-plan.md), [per-feature evidence](docs/final-feature-audit.md), and [comparison samples](docs/download-comparison.json).
 
 <details>
 <summary>Original 70 requested capabilities and their behavioral tests</summary>
@@ -208,6 +208,8 @@ The download command exits zero only after publication and prints a JSON result 
 ```sh
 bin/check
 ```
+
+The complete protocol fixtures also require the Kerberos KDC tools `krb5kdc`, `kadmin.local` and `kinit`; CI installs the Arch `krb5` package.
 
 This builds the app and runs the engine, real QML, IPC, scheduling, independent adversarial, HTTPS, progress, system integration, browser, media-quality, crawler and CLI tests, then validates all 70 ledger entries. Tests use temporary files, local HTTP/HTTPS/FTP/proxy fixtures and an isolated Chromium profile. `python3 tests/firefox_e2e.py` additionally checks the shipped Firefox extension in an isolated headless Zen profile when `/opt/zen-browser-bin/zen-bin` is installed, including native handoff, file bytes and decoded video frames. The actual scanner checks clean and standard EICAR fixtures. Power, network disconnect, notification and sound behavior is verified through isolated executors; tests do not shut down or disconnect the machine.
 
