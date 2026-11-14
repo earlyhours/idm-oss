@@ -328,6 +328,14 @@ class WebsiteTests(unittest.TestCase):
     def file_manifest(self):
         return json.loads(next(self.output.glob('.idm-file-*.json')).read_text())
 
+    def test_streamed_file_budget_can_exceed_the_website_memory_budget(self):
+        code, rows = self.file_sync(2000, maxBytes=2 * 1024 ** 3)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual((self.output / 'payload.bin').read_bytes(), self.file_body)
+        code, rows = self.run_worker(maxBytes=2 * 1024 ** 3)
+        self.assertEqual(code, 1)
+        self.assertIn('maxBytes', rows[-1]['error'])
+
     def test_file_resumes_across_real_worker_restarts_with_bounded_private_partials(self):
         target = self.output / 'payload.bin'
         total = 0

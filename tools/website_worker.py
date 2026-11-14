@@ -230,7 +230,8 @@ class Mirror:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.depth = self.number(job, 'depth', 2, 0, 10)
         self.max_files = self.number(job, 'maxFiles', 100, 1, 10000)
-        self.max_bytes = self.number(job, 'maxBytes', 50 * 1024 * 1024, 1, 1024 * 1024 * 1024)
+        self.max_bytes = self.number(job, 'maxBytes', 50 * 1024 * 1024, 1,
+                                     1024 ** 4 if self.mode == 'file' else 1024 ** 3)
         self.include = self.filters(job, 'include')
         self.exclude = self.filters(job, 'exclude')
         self.headers = self.parse_headers(job.get('headers', {}))

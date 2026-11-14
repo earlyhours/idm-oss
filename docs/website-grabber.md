@@ -82,6 +82,6 @@ Completed entries stay in the synchronization queue. Subsequent runs send stored
 
 The controller accepts `quotaMB` and `quotaPeriodMinutes`; one MB means 1,048,576 bytes. Zero MB disables enforcement. Usage and period start survive application restarts, and quota-paused work resumes at the next period. File and media downloads use received-byte snapshots; retries and buffered traffic can exceed the allowance. Worker transfers report body bytes as they are read. This accounting is not a system-wide network traffic meter.
 
-File synchronization has a configured worker byte budget of 500 MiB per resource. Servers without safe range resume need an allowance large enough for one complete transfer. Forced-crash recovery can reject an unverified partial rather than reuse bytes with an unknown identity.
+File synchronization streams to disk with a configured limit of 1 TiB per resource. Website crawls keep their 500 MiB job budget. Servers without safe range resume need an allowance large enough for one complete transfer. Forced-crash recovery can reject an unverified partial rather than reuse bytes with an unknown identity.
 
 The worker fixtures cover quota-period resumes, changed ETags, ignored ranges, malformed Content-Range, truncated responses, modified private partials, and user-edited destinations. `bin/test-automation-sync` checks the controller across restarts. `bin/test-automation-ui` checks real mouse clicks through to authenticated file bytes.

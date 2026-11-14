@@ -1428,7 +1428,7 @@ bool Automation::startWorker(QVariantMap job, const QString &list,
     job["headers"] = site.value("headers");
   QSaveFile jobFile(jobPath);
   job["maxFiles"] = 500;
-  job["maxBytes"] = 500 * 1024 * 1024;
+  job["maxBytes"] = job.value("mode") == "file" ? 1024LL * 1024 * 1024 * 1024 : 500LL * 1024 * 1024;
   job["transferLimit"] = 1024LL * 1024 * 1024 * 1024;
   if (settings.value("quotaMB").toLongLong() > 0)
     job["transferLimit"] =
