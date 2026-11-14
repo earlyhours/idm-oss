@@ -1,0 +1,441 @@
+{
+  "measuredAt": "2026-11-14T04:56:22.735538+00:00",
+  "baseline": "curl default single connection with redirects and HTTP failures enabled",
+  "originalWindowsIdmTested": false,
+  "rounds": 3,
+  "scenarios": [
+    {
+      "name": "fast.bin",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.006482,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.006603,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.005632,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.006482,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.06788,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.165298,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.06788,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.057651,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.095727,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.100026,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.095529,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.095727,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "per-connection-limit.bin",
+      "clients": {
+        "curl": {
+          "medianSeconds": 1.016104,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 1.016104,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 1.023045,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 1.013735,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 1.067365,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 1.067165,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 1.067365,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 1.070546,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.322865,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.307809,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.322865,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.344596,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "no-range.bin",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.005807,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.005807,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.005418,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.007699,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.075438,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.069017,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.101103,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.075438,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.083017,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.069032,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.087647,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.083017,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "unknown-size.bin",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.006193,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.006193,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.014219,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.005296,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.067739,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.078103,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.067739,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.065007,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.09249,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.079492,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.160256,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.09249,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "redirect",
+      "clients": {
+        "curl": {
+          "medianSeconds": 0.007649,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.006065,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.007764,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.007649,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 0.096488,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.095887,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.096488,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.097804,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 0.140053,
+          "bytes": 2097152,
+          "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938",
+          "samples": [
+            {
+              "seconds": 0.140053,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.147369,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            },
+            {
+              "seconds": 0.138131,
+              "bytes": 2097152,
+              "sha256": "91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    },
+    {
+      "name": "public-file",
+      "clients": {
+        "curl": {
+          "medianSeconds": 8.396486,
+          "bytes": 22532980,
+          "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d",
+          "samples": [
+            {
+              "seconds": 6.56139,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 8.611508,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 8.396486,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            }
+          ]
+        },
+        "idm-native-1": {
+          "medianSeconds": 6.940114,
+          "bytes": 22532980,
+          "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d",
+          "samples": [
+            {
+              "seconds": 6.940114,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 6.883346,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 9.240729,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            }
+          ]
+        },
+        "idm-native-4": {
+          "medianSeconds": 8.91978,
+          "bytes": 22532980,
+          "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d",
+          "samples": [
+            {
+              "seconds": 5.635047,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 11.767675,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            },
+            {
+              "seconds": 8.91978,
+              "bytes": 22532980,
+              "sha256": "086de5882e3cb310d4dca48457522e2e48018ecd43da9cdf827f6a0759efb07d"
+            }
+          ]
+        }
+      },
+      "identicalBytes": true
+    }
+  ],
+  "collisionPreservesExistingFile": true
+}
