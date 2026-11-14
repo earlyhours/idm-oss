@@ -1423,6 +1423,9 @@ bool Automation::startWorker(QVariantMap job, const QString &list,
       !scriptFile.commit())
     return reject(tr("Cannot prepare website grabber."));
   const auto inputJob = job;
+  const auto site = settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
+  if (site.contains("headers"))
+    job["headers"] = site.value("headers");
   QSaveFile jobFile(jobPath);
   job["maxFiles"] = 500;
   job["maxBytes"] = 500 * 1024 * 1024;

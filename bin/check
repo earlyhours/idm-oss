@@ -9,6 +9,8 @@ bin/test-bridge
 python3 tests/background_startup_test.py
 bin/test-automation
 bin/test-automation-adversarial
+bin/test-automation-sync
+bin/test-automation-ui
 bin/test-tls
 bin/test-features
 bin/test-parity

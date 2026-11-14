@@ -82,7 +82,7 @@ ApplicationWindow {
         })
     }
     readonly property bool menusOpen: tasksMenu.visible || downloadsMenu.visible || viewMenu.visible || helpMenu.visible || rowMenu.visible || queueMenu.visible || moreActions.visible
-    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible
+    property bool editing: menusOpen || urlDialog.visible || infoDialog.visible || optionsDialog.visible || removeDialog.visible || shortcutsDialog.visible || aboutDialog.visible || schedulerDialog.visible || listDialog.visible || editDialog.visible || grabberDialog.visible || policyDialog.visible || automationProjects.visible
     readonly property bool bridgeAvailable: typeof browserBridge !== "undefined" && browserBridge.available
     readonly property string bridgeError: typeof browserBridge !== "undefined" ? browserBridge.error : ""
     property bool showDetailsColumns: false
@@ -459,6 +459,7 @@ ApplicationWindow {
             IdmMenuSeparator { appWindow: win; }
             Action { text: qsTr("Import downloads"); icon.source: win.iconSource("download", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=true; listDialog.open() } }
             Action { text: qsTr("Export downloads"); icon.source: win.iconSource("file", win.muted); enabled: win.automationAvailable; onTriggered: { listDialog.importing=false; listDialog.open() } }
+            Action { objectName: "automationProjectsAction"; text: qsTr("Synchronization and quotas"); enabled: win.automationAvailable; onTriggered: automationProjects.open() }
             Action { text: qsTr("Site Grabber"); icon.source: win.iconSource("folder", win.muted); enabled: win.automationAvailable; onTriggered: grabberDialog.open() }
             IdmMenuSeparator { appWindow: win; }
             IdmMenuItem { appWindow: win; shortcutHint: "Ctrl+Q"; text: qsTr("Exit"); icon.source: win.iconSource("stopall", win.muted); onTriggered: { win.controller.pauseAll(); Qt.quit() } }
@@ -1298,4 +1299,12 @@ ApplicationWindow {
             Label { text: qsTr("Not affiliated with Tonec."); color: win.muted; font.pixelSize: 12 }
         }
     }
+    AutomationDialog {
+        id: automationProjects
+        controller: win.automationAvailable ? automation : null
+        appWindow: win
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+    }
+
 }

@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/automation-ui-tests"
+cd "$ROOT/build/automation-ui-tests"
+qmake6 "$ROOT/tests/automation_ui_tests.pro"
+make -j2
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software ./automation_ui_tests "$@"

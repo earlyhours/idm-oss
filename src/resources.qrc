@@ -1,5 +1,6 @@
 <RCC><qresource prefix="/">
 <file alias="Main.qml">Main.qml</file>
+<file alias="AutomationDialog.qml">AutomationDialog.qml</file>
 <file alias="IdmMenu.qml">IdmMenu.qml</file>
 <file alias="IdmMenuItem.qml">IdmMenuItem.qml</file>
 <file alias="IdmMenuSeparator.qml">IdmMenuSeparator.qml</file>
