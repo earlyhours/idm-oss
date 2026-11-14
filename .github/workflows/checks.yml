@@ -6,7 +6,7 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install free build tools
-        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2
+        run: pacman -Syu --noconfirm git qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2 krb5
       - uses: actions/checkout@v4
       - name: Build
         run: bin/build
@@ -36,6 +36,8 @@ jobs:
         run: bin/test-automation-adversarial
       - name: Website mirroring
         run: python tests/website_worker_test.py
+      - name: Transfer authentication, proxies and recovery
+        run: tests/run_transfer_features
       - name: Trusted and untrusted HTTPS
         run: bin/test-tls
       - name: Media quality variants

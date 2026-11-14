@@ -13,6 +13,7 @@ bin/test-automation-adversarial
 bin/test-automation-sync
 bin/test-automation-ui
 bin/test-tls
+tests/run_transfer_features
 bin/test-features
 bin/test-parity
 bin/test-system
