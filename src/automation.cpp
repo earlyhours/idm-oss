@@ -190,6 +190,11 @@ QString validatePreferences(QVariantMap &values) {
         i.value().metaType().id() != QMetaType::QVariantMap)
       return QObject::tr("Use a full site origin such as "
                          "https://example.com:443, without a path or login.");
+    const auto profile = i.value().toMap();
+    if (profile.contains("authMethod") &&
+        (profile.value("authMethod").metaType().id() != QMetaType::QString ||
+         !QStringList{"auto", "basic", "digest", "ntlm", "negotiate", "kerberos"}.contains(profile.value("authMethod").toString())))
+      return QObject::tr("Choose a supported site authentication method.");
     sites[origin] = i.value();
   }
   values["siteSettings"] = sites;
@@ -499,7 +504,7 @@ QString Automation::enqueue(QVariantMap request) {
   const auto site =
       settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
   for (const auto &key :
-       QStringList{"directory", "connections", "proxy", "username", "password"})
+       QStringList{"directory", "connections", "proxy", "username", "password", "authMethod"})
     if (!request.contains(key) && site.contains(key))
       request[key] = site[key];
   if (!request.contains("directory"))
@@ -562,7 +567,7 @@ QString Automation::enqueue(QVariantMap request) {
           if ((job.value("status") == "paused" ||
                job.value("status") == "error") &&
               (request.contains("headers") || request.contains("username") ||
-               request.contains("password") || request.contains("pageUrl"))) {
+               request.contains("password") || request.contains("authMethod") || request.contains("pageUrl"))) {
             bool updated = false;
             if (!QMetaObject::invokeMethod(
                     manager, "updateContext", Qt::DirectConnection,
@@ -589,14 +594,14 @@ QString Automation::enqueue(QVariantMap request) {
     else {
       const QUrl proxy(text);
       if (!proxy.isValid() || proxy.host().isEmpty() ||
-          !QStringList{"http", "socks5"}.contains(proxy.scheme())) {
-        reject(tr("Proxy must be an http:// or socks5:// URL."));
+          !QStringList{"http", "https", "socks5"}.contains(proxy.scheme())) {
+        reject(tr("Proxy must be an http://, https:// or socks5:// URL."));
         return {};
       }
       request["proxy"] = QVariantMap{
           {"type", proxy.scheme()},
           {"host", proxy.host()},
-          {"port", proxy.port(proxy.scheme() == "socks5" ? 1080 : 8080)},
+          {"port", proxy.port(proxy.scheme() == "socks5" ? 1080 : proxy.scheme() == "https" ? 443 : 8080)},
           {"username", proxy.userName()},
           {"password", proxy.password()}};
     }

@@ -1,6 +1,9 @@
 #include <QtTest>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -31,6 +34,11 @@ private slots:
                     auto request = socket->property("request").toByteArray()+socket->readAll();
                     socket->setProperty("request",request);
                     if (!request.contains("\r\n\r\n")) return;
+                    if (request.startsWith("GET /auth.bin ") && !request.contains("Authorization: Basic dXNlcjpwYXNz") && !request.contains("authorization: Basic dXNlcjpwYXNz")) {
+                        socket->write("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"fixture\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        socket->disconnectFromHost();
+                        return;
+                    }
                     if (!request.toLower().contains("x-sync-key: fixture-secret")) {
                         socket->write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                         socket->disconnectFromHost();
@@ -114,6 +122,28 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(dialog,"removeProject"));
         QVERIFY(automation.preferences().value("syncJobs").toList().isEmpty());
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        QVERIFY(QMetaObject::invokeMethod(window,"presentUrl",Q_ARG(QVariant,origin+"/auth.bin")));
+        find("useAuthorization")->setProperty("checked",true);
+        find("loginInput")->setProperty("text","user");
+        find("passwordInput")->setProperty("text","pass");
+        find("authMethodChoice")->setProperty("currentIndex",1);
+        QVERIFY(QMetaObject::invokeMethod(window,"prepareInformation"));
+        QVERIFY(QMetaObject::invokeMethod(window,"submit",Q_ARG(QVariant,true)));
+        QTRY_COMPARE_WITH_TIMEOUT(manager.downloads().last().toMap().value("status").toString(),"complete",15000);
+        QCOMPARE(manager.downloads().last().toMap().value("authMethod").toString(),"basic");
+        QFile authenticated(directory+"/auth.bin"); QVERIFY(authenticated.open(QIODevice::ReadOnly)); QCOMPARE(authenticated.readAll(),payload);
+        auto sites=automation.preferences().value("siteSettings").toMap();
+        auto profile=sites.value(automation.siteOrigin(origin)).toMap();
+        profile["authMethod"]="digest";sites[automation.siteOrigin(origin)]=profile;
+        QVERIFY(automation.configure({{"siteSettings",sites}}));
+        auto id=automation.enqueue({{"url",origin+"/inherited.bin"},{"start",false}});QVERIFY(!id.isEmpty());
+        QCOMPARE(manager.downloads().last().toMap().value("authMethod").toString(),"digest");
+        auto other=automation.enqueue({{"url","http://127.0.0.1:1/other.bin"},{"start",false}});QVERIFY(!other.isEmpty());
+        QCOMPARE(manager.downloads().last().toMap().value("authMethod").toString(),"auto");
+        auto proxied=automation.enqueue({{"url",origin+"/proxy.bin"},{"proxy","https://127.0.0.1"},{"start",false}});QVERIFY2(!proxied.isEmpty(),qPrintable(automation.error()));
+        const auto saved=QJsonDocument::fromJson([&]{QFile f(temporary.path()+"/state/queue.json");f.open(QIODevice::ReadOnly);return f.readAll();}()).object();
+        const auto proxy=saved.value("downloads").toArray().last().toObject().value("proxy").toObject();
+        QCOMPARE(proxy.value("type").toString(),"https");QCOMPARE(proxy.value("port").toInt(),443);
         QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
     }
 };

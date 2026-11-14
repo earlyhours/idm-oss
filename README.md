@@ -91,13 +91,15 @@ The checklist below records the project's tested behavior. The original 70 reque
 Additional parity checklist, separate from the older 70-item ledger:
 
 - [x] Individual-file periodic synchronization with remote validators, retained completed entries, atomic replacement and protection for local edits. [Tests](tests/automation_sync_tests.cpp).
-- [x] Received-byte quota per configurable period, persisted across restart with automatic pause/resume. Buffered traffic and retry accounting can exceed the allowance; this is not a strict network traffic meter. [Tests](tests/automation_sync_tests.cpp).
+- [x] Received-byte quota per configurable period, persisted across restart with automatic pause/resume. Buffered traffic, retries, media buffering and FTP verification can exceed the allowance; this is not a strict network traffic meter. [Tests](tests/automation_sync_tests.cpp).
 - [x] One-time and periodic grabber projects with start/stop dates. [Tests](tests/automation_sync_tests.cpp).
 - [x] Include/exclude wildcard filters for website projects. [Tests](tests/website_worker_test.py).
 - [x] Selected page links, with selection boundaries, deduplication and frame targeting. [Unit tests](tests/browser_extension_test.mjs), [real browser test](tests/browser_e2e.mjs).
 - [x] Usable quota and synchronization project controls. [Real QML click-to-download test](tests/automation_ui_tests.cpp).
 - [x] Resumable file synchronization across quota periods, using private disk partials, strong ETags and checked byte ranges. Servers without safe resume need a quota large enough for one transfer. [Tests](tests/website_worker_test.py).
-- [ ] Broader authentication, proxy and FTP recovery coverage. Implementation in progress.
+- [x] FTP REST resume with persistent partials, SIZE/MDTM checks and full-content verification before publication. Verification adds another complete transfer. [Protocol tests](tests/transfer_features_test.py).
+- [x] Basic, Digest, Auto NTLMv2, Negotiate and Kerberos authentication paths, including an isolated Kerberos test server. Explicit NTLM needs an NTLM-enabled curl build; Auto uses Qt's NTLM support.
+- [x] TLS-encrypted HTTPS proxies and authenticated SOCKS media, with decoded MP4, HLS and DASH tests. Explicit authentication and HTTPS-proxy file downloads use one connection.
 - [x] Persisted toolbar and column order/visibility, completed-file drag and opt-in login startup. [Desktop tests](tests/desktop_tests.cpp), [actual executable startup tests](tests/desktop_startup_test.py).
 - [x] Manual release checking and opt-in weekly checks with bounded, plain-text release notes. Installing a release still uses the package/release workflow; a stable upstream release must exist.
 - [x] Explicit desktop URL handling with confirmation. This does not intercept arbitrary application network traffic.
@@ -184,7 +186,7 @@ Queue metadata and partial data normally live in `~/.local/share/idm-native/idm-
 
 Queue records and working files use owner-only permissions because URLs and headers can contain credentials. Existing destination files are preserved; collisions receive safe suffixes. Removing a queue entry keeps completed files. Final publication requires hard-link support and temporary space to assemble parts.
 
-HTTP byte-range resume requires a stable validator and matching responses. Changed resources are rejected before mixing bytes. FTP and media pause/restart preserve the job but restart transfer from zero. SOCKS5 is supported for file transfers; media uses direct or HTTP-proxy transport. Encrypted HTTPS-to-proxy transport is unsupported.
+HTTP byte-range resume requires a stable validator and matching responses. Changed resources are rejected before mixing bytes. FTP resume uses stable SIZE/MDTM metadata, REST, and a full verification download before publication. Media restarts safely from zero. HTTP and HTTPS proxies and SOCKS5 support file and media transfers. Explicit HTTP authentication and encrypted proxies use curl with one file connection. Changing between Qt and curl when partials exist requires a new job.
 
 ## Command line
 
@@ -207,4 +209,4 @@ The [verification record](docs/verification.md), [system integration report](doc
 
 ## Remaining bounds
 
-The static website grabber is not a JavaScript browser renderer. Capture supports finite, unprotected media; DRM bypass and live-stream recording are unsupported. Native portal selection and every desktop notification/audio/authorization environment were not physically exercised. The UI follows the supplied help's classic structure; complete pixel and behavioral equivalence with every Windows IDM version is unproven.
+The static website grabber is not a JavaScript browser renderer. Capture supports finite, unprotected media; DRM bypass and live-stream recording are unsupported. Native portal selection, actual session-login startup, external file-manager drop receipt, FTPS servers, and every desktop notification/audio/authorization environment were not physically exercised. MMS is unsupported. Only English and Danish interface catalogs are included; original IDM toolbar skin packs are not compatible. Firefox signing and a published stable release remain external distribution steps. The UI follows the supplied help's classic structure; complete pixel and behavioral equivalence with every Windows IDM version is unproven.

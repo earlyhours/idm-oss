@@ -65,6 +65,8 @@ ApplicationWindow {
     property string installMessage: ""
     readonly property string currentError: lastError || backend.error || (automationAvailable ? automation.error : "")
     property var pendingRequest: ({})
+    readonly property var authMethods: ["auto", "basic", "digest", "ntlm", "negotiate", "kerberos"]
+    readonly property var authLabels: [qsTr("Auto"), "Basic", "Digest", "NTLM", "Negotiate", "Kerberos"]
     property var selected: backend.downloads.find(d => d.id === selectedId) || null
     property var shown: {
         let policies = win.automationAvailable ? automation.jobPolicies : {}
@@ -242,6 +244,7 @@ ApplicationWindow {
     function loadSiteSettings() {
         let site=automation.siteSettingsForEditing(siteHost.text), custom={}
         siteLogin.text=site.username || ""; sitePassword.text=site.password || ""
+        siteAuthMethod.currentIndex=Math.max(0,authMethods.indexOf(site.authMethod || "auto"))
         siteDirectory.text=site.directory || ""; siteConnections.value=site.connections || 4; siteProxy.text=site.proxy || ""
         siteAgent.text=""; siteReferer.text=""
         for (let name of Object.keys(site.headers || {})) {
@@ -259,7 +262,7 @@ ApplicationWindow {
             if (["user-agent","referer"].includes(name.toLowerCase())) delete headers[name]
         if (siteAgent.text) headers["User-Agent"]=siteAgent.text
         if (siteReferer.text) headers["Referer"]=siteReferer.text
-        let site={connections:siteConnections.value,headers:headers}
+        let site={connections:siteConnections.value,headers:headers,authMethod:authMethods[siteAuthMethod.currentIndex]}
         if (siteDirectory.text) site.directory=siteDirectory.text
         if (siteProxy.text) site.proxy=siteProxy.text
         if (siteLogin.text) { site.username=siteLogin.text; site.password=sitePassword.text }
@@ -340,10 +343,10 @@ ApplicationWindow {
             for (let name of Object.keys(custom)) headers[name.toLowerCase()]=custom[name]
             request.headers=headers
         }
-        if (useAuthorization.checked) { request.username = loginInput.text; request.password = passwordInput.text }
+        if (useAuthorization.checked) { request.username = loginInput.text; request.password = passwordInput.text; request.authMethod=authMethods[authMethodChoice.currentIndex] }
         let id = win.automationAvailable ? automation.enqueue(request) : backend.addRequest(request)
         if (!id) { lastError = win.automationAvailable ? automation.error : backend.error; return }
-        selectedId = id; lastError = ""; urlInput.clear(); loginInput.clear(); passwordInput.clear(); useAuthorization.checked=false; infoDialog.close()
+        selectedId = id; lastError = ""; urlInput.clear(); loginInput.clear(); passwordInput.clear(); useAuthorization.checked=false; authMethodChoice.currentIndex=0; infoDialog.close()
         if (droppedUrls.length) {
             let remaining = droppedUrls.slice()
             urlInput.text = remaining.shift()
@@ -895,6 +898,9 @@ ApplicationWindow {
                             Label { text: qsTr("Password"); font.pixelSize: 11; color: win.muted }
                             AppField { id: loginInput; objectName: "loginInput"; maximumLength: 512; Layout.fillWidth: true }
                             AppField { id: passwordInput; objectName: "passwordInput"; maximumLength: 4096; echoMode: TextInput.Password; Layout.fillWidth: true }
+                            Label { text: qsTr("Authentication method"); font.pixelSize: 11; color: win.muted }
+                            IdmComboBox { appWindow: win; id: authMethodChoice; objectName: "authMethodChoice"; model: win.authLabels; Layout.fillWidth: true }
+                            Label { text: qsTr("Negotiate and Kerberos use your system ticket. Explicit methods use one connection."); wrapMode: Text.WordWrap; Layout.columnSpan: 2; Layout.fillWidth: true; color: win.muted; font.pixelSize: 11 }
                         }
                     }
                 }
@@ -1137,7 +1143,7 @@ ApplicationWindow {
                         Label { text: qsTr("Speed limit (bytes/s, 0 = unlimited)"); font.pixelSize: 11; color: win.muted }
                         AppField { id: rateInput; objectName: "rateInput"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly }
                         Label { text: qsTr("Proxy URL") }
-                        AppField { id: proxyInput; Layout.fillWidth: true; placeholderText: "http://proxy:8080" }
+                        AppField { id: proxyInput; Layout.fillWidth: true; placeholderText: "http://proxy:8080 or https://proxy:443" }
                     }
                     Item { Layout.fillHeight: true }
                 }
@@ -1194,6 +1200,8 @@ ApplicationWindow {
                     FormDisclosure { id: siteAuthentication; objectName: "siteAuthenticationDisclosure"; text: qsTr("Authentication"); Layout.fillWidth: true; Layout.topMargin: 12 }
                     GridLayout {
                         visible: siteAuthentication.checked; columns: 2; columnSpacing: 12; rowSpacing: 12; Layout.fillWidth: true
+                        Label { text: qsTr("Authentication method"); font.pixelSize: 11; color: win.muted }
+                        IdmComboBox { appWindow: win; id: siteAuthMethod; objectName: "siteAuthMethod"; model: win.authLabels; Layout.fillWidth: true }
                         Label { text: qsTr("Login"); font.pixelSize: 11; color: win.muted }
                         AppField { id: siteLogin; Layout.fillWidth: true; maximumLength: 512; onTextChanged: if (text) siteAuthentication.checked = true }
                         Label { text: qsTr("Password"); font.pixelSize: 11; color: win.muted }
