@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     if (headless) qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
     app.setApplicationName("idm-native");
-    app.setApplicationVersion("0.2.1");
+    app.setApplicationVersion("0.3.0");
     app.setOrganizationName("idm-native");
     app.setDesktopFileName("idm-native");
     QCommandLineParser parser;
