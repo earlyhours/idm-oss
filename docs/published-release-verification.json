@@ -1,0 +1,10 @@
+{
+  "publishedPackageHashMatched": true,
+  "liveQtReleaseCheckPassed": true,
+  "tag": "v0.3.0",
+  "packageSha256": "16ba5f4c53a1ab3fa591ac46cbaf52a5399e78ac0ace1137a80cafe618d27e56",
+  "verifiedAt": "2026-11-14T06:09:19.935218+00:00",
+  "releaseUrl": "https://github.com/earlyhours/idm-oss/releases/tag/v0.3.0",
+  "packageUrl": "https://github.com/earlyhours/idm-oss/releases/download/v0.3.0/idm-native-0.3.0-1-x86_64.pkg.tar.zst",
+  "repository": "earlyhours/idm-oss"
+}
