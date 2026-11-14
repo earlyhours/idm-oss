@@ -227,6 +227,79 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual(code, 1); self.assertIn('already using', rows[-1]['error'])
         self.assertEqual(self.requests, [])
 
+    def test_individual_file_sync_retains_validators_and_protects_outputs(self):
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png')
+        self.assertEqual(code, 0, rows)
+        target = self.output / 'photo.png'
+        original = target.read_bytes()
+        stamp = target.stat().st_mtime_ns
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png')
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['status'], 304)
+        self.assertTrue(rows[-1]['unchanged'])
+        self.assertEqual(rows[-1]['transferredBytes'], 0)
+        self.assertEqual(target.stat().st_mtime_ns, stamp)
+        self.assertEqual(target.read_bytes(), original)
+        target.write_bytes(b'user edit')
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png')
+        self.assertEqual(code, 1)
+        self.assertEqual(target.read_bytes(), b'user edit')
+        self.output = self.root / 'unrelated'
+        self.output.mkdir()
+        (self.output / 'photo.png').write_bytes(b'original')
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png')
+        self.assertEqual(code, 1)
+        self.assertEqual((self.output / 'photo.png').read_bytes(), b'original')
+
+    def test_individual_changed_file_atomically_replaces_owned_bytes(self):
+        code, rows = self.run_worker(mode='file', filename='document.html')
+        self.assertEqual(code, 0, rows)
+        old = (self.output / 'document.html').open('rb')
+        self.version = 2
+        code, rows = self.run_worker(mode='file', filename='document.html')
+        self.assertEqual(code, 0, rows)
+        self.assertFalse(rows[-1]['unchanged'])
+        self.assertIn(b'Generation 1', old.read())
+        old.close()
+        self.assertIn(b'Generation 2', (self.output / 'document.html').read_bytes())
+        self.assertEqual(len(list(self.output.glob('.idm-file-*.json'))), 1)
+
+    def test_quota_counts_real_bytes_on_failed_and_successful_worker_runs(self):
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png', transferLimit=5)
+        self.assertEqual(code, 2, rows)
+        self.assertEqual(rows[-1]['event'], 'quota')
+        self.assertEqual(max(row.get('transferredBytes', 0) for row in rows), 5)
+        self.assertFalse((self.output / 'photo.png').exists())
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png', transferLimit=100)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['transferredBytes'], len((self.output / 'photo.png').read_bytes()))
+        code, rows = self.run_worker('/img/photo.png', mode='file', filename='photo.png', transferLimit=0)
+        self.assertEqual(code, 0, rows)
+        self.assertEqual(rows[-1]['transferredBytes'], 0)
+
+    def test_images_only_include_and_exclude_filters_bound_published_outputs(self):
+        code, rows = self.run_worker(include=['*.png'], exclude=['img/photo*'])
+        self.assertEqual(code, 0, rows)
+        manifest = self.manifest()
+        published = [name for name in manifest['managed'] if not name.startswith('.idm-')]
+        self.assertTrue(published)
+        self.assertTrue(all(name.endswith('.png') for name in published))
+        self.assertNotIn(self.url + '/img/photo.png', manifest['resources'])
+        self.assertFalse(any(path.startswith('/img/photo') for path, _ in self.requests))
+        self.assertIn(manifest['resources'][self.url + '/img/bg.png']['path'], published)
+        self.assertFalse((self.output / 'index.html').exists())
+        self.assertEqual(rows[-1]['entry'], '')
+        for filters in ({'include': '*.png'}, {'exclude': ['']}, {'include': ['x'] * 33}, {'include': ['x' * 257]}):
+            code, rows = self.run_worker(**filters)
+            self.assertEqual(code, 1, rows)
+
+    def test_file_configuration_rejects_unsafe_names_and_modes(self):
+        for filename in ('../escape', 'a/b', 'a\\b', '.idm-site.lock', '.', '', 'bad\x01'):
+            code, rows = self.run_worker(mode='file', filename=filename)
+            self.assertEqual(code, 1, (filename, rows))
+        code, rows = self.run_worker(mode='bogus')
+        self.assertEqual(code, 1)
+
     def test_private_job_headers_and_query_progress_redaction(self):
         file = self.root / 'job.json'
         file.write_text(json.dumps({'url': self.url + '/index', 'directory': str(self.output), 'headers': {'Cookie': 'secret'}})); file.chmod(0o644)

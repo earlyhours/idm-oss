@@ -16,6 +16,7 @@
 #include <QTextStream>
 #include <QUrl>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 
@@ -42,14 +43,114 @@ QString urlOrigin(const QString &input) {
   QUrl origin;
   origin.setScheme(scheme);
   origin.setHost(url.host().toLower());
-  origin.setPort(url.port(scheme == "https" ? 443 : scheme == "ftps" ? 990 : scheme == "ftp" ? 21 : 80));
+  origin.setPort(url.port(scheme == "https"  ? 443
+                          : scheme == "ftps" ? 990
+                          : scheme == "ftp"  ? 21
+                                             : 80));
   return origin.toString(QUrl::FullyEncoded);
 }
 bool isSiteOrigin(const QString &input) {
   const QUrl url(input.trimmed());
   return !urlOrigin(input).isEmpty() &&
-         (url.path().isEmpty() || url.path() == "/") &&
-         !url.hasQuery() && !url.hasFragment();
+         (url.path().isEmpty() || url.path() == "/") && !url.hasQuery() &&
+         !url.hasFragment();
+}
+bool integer(const QVariant &value, qint64 low, qint64 high) {
+  bool ok = false;
+  const double number = value.toDouble(&ok);
+  return value.metaType().id() != QMetaType::Bool && ok &&
+         std::isfinite(number) && std::floor(number) == number &&
+         number >= low && number <= high;
+}
+bool date(const QVariant &value) {
+  return value.metaType().id() == QMetaType::QString &&
+         (value.toString().isEmpty() ||
+          QDateTime::fromString(value.toString(), Qt::ISODate).isValid());
+}
+QString projectKey(const QVariantMap &job) {
+  return normalizedUrl(job.value("url").toString()) + "\n" +
+         QDir::cleanPath(job.value("directory").toString()) + "\n" +
+         job.value("filename").toString();
+}
+QString validateProjects(const QVariant &value, bool files) {
+  if (value.metaType().id() != QMetaType::QVariantList ||
+      value.toList().size() > 1000)
+    return QObject::tr(
+        "Synchronization projects must be a list of at most 1000 entries.");
+  QSet<QString> destinations;
+  for (const auto &v : value.toList()) {
+    if (v.metaType().id() != QMetaType::QVariantMap)
+      return QObject::tr("Synchronization project must be a map.");
+    const auto job = v.toMap();
+    const QStringList keys{"url",     "directory",       "filename",
+                           "depth",   "intervalMinutes", "nextRun",
+                           "startAt", "stopAt",          "enabled",
+                           "include", "exclude"};
+    for (auto i = job.begin(); i != job.end(); ++i)
+      if (!keys.contains(i.key()) ||
+          (files &&
+           QStringList{"depth", "include", "exclude"}.contains(i.key())) ||
+          (!files && i.key() == "filename"))
+        return QObject::tr("Unknown synchronization project field: %1")
+            .arg(i.key());
+    for (const auto &field : QStringList{"include", "exclude"}) {
+      if (!job.contains(field))
+        continue;
+      const auto patterns = job.value(field);
+      if ((patterns.metaType().id() != QMetaType::QVariantList &&
+           patterns.metaType().id() != QMetaType::QStringList) ||
+          patterns.toList().size() > 32)
+        return QObject::tr(
+            "Filters must be lists of at most 32 wildcard patterns.");
+      for (const auto &pattern : patterns.toList())
+        if (pattern.metaType().id() != QMetaType::QString ||
+            pattern.toString().isEmpty() || pattern.toString().size() > 256 ||
+            pattern.toString().contains(
+                QRegularExpression("[\\x00-\\x1f\\x7f]")))
+          return QObject::tr("Invalid wildcard filter.");
+    }
+    const QUrl url(job.value("url").toString(), QUrl::StrictMode);
+    if (!url.isValid() ||
+        !QStringList{"http", "https"}.contains(url.scheme()) ||
+        url.host().isEmpty() || !url.userInfo().isEmpty() ||
+        job.value("url").toString().size() > 16384 ||
+        job.value("url").toString().contains(
+            QRegularExpression("[\\x00-\\x1f\\x7f]")) ||
+        !QFileInfo(job.value("directory").toString()).isAbsolute() ||
+        job.value("directory").toString().size() > 4096 ||
+        job.value("directory")
+            .toString()
+            .contains(QRegularExpression("[\\x00-\\x1f\\x7f]")) ||
+        !integer(job.value("intervalMinutes", files ? 1 : 0), files ? 1 : 0,
+                 525600) ||
+        (!files && !integer(job.value("depth", 1), 0, 5)) ||
+        (job.contains("enabled") &&
+         job.value("enabled").metaType().id() != QMetaType::Bool))
+      return QObject::tr("Invalid synchronization project settings.");
+    for (const auto &key : QStringList{"nextRun", "startAt", "stopAt"})
+      if (job.contains(key) && !date(job.value(key)))
+        return QObject::tr("Project timestamps must use ISO format.");
+    const auto start =
+        QDateTime::fromString(job.value("startAt").toString(), Qt::ISODate);
+    const auto stop =
+        QDateTime::fromString(job.value("stopAt").toString(), Qt::ISODate);
+    if (start.isValid() && stop.isValid() && stop <= start)
+      return QObject::tr("Project stop must be after its start.");
+    const auto filename = job.value("filename").toString();
+    if (files &&
+        (filename.isEmpty() || filename == "." || filename == ".." ||
+         filename.startsWith(".idm-") || filename.toUtf8().size() > 180 ||
+         filename.contains(QRegularExpression("[\\x00-\\x1f\\x7f/\\\\]"))))
+      return QObject::tr("Synchronization needs a plain filename without the "
+                         "reserved .idm- prefix.");
+    const auto destination =
+        QDir::cleanPath(job.value("directory").toString()) + "/" + filename;
+    if (destinations.contains(destination))
+      return QObject::tr(
+          "Synchronization projects cannot share an output destination.");
+    destinations.insert(destination);
+  }
+  return {};
 }
 QString validatePreferences(QVariantMap &values) {
   struct Bound {
@@ -63,11 +164,15 @@ QString validatePreferences(QVariantMap &values) {
                           {"retryDelaySeconds", 1, 86400},
                           {"timeoutSeconds", 1, 3600},
                           {"rateLimit", 0, 1000000000000LL},
+                          {"quotaMB", 0, 1000000000},
+                          {"quotaPeriodMinutes", 1, 525600},
                           {"completionDelaySeconds", 5, 86400}};
   for (const auto &bound : bounds) {
     bool ok = false;
     const auto number = values.value(bound.name).toLongLong(&ok);
-    if (!ok || number < bound.minimum || number > bound.maximum)
+    if (!ok ||
+        !integer(values.value(bound.name), bound.minimum, bound.maximum) ||
+        number < bound.minimum || number > bound.maximum)
       return QObject::tr("Invalid setting: %1").arg(bound.name);
   }
   if (!QFileInfo(values.value("directory").toString()).isAbsolute())
@@ -83,7 +188,8 @@ QString validatePreferences(QVariantMap &values) {
     const auto origin = urlOrigin(i.key());
     if (!isSiteOrigin(i.key()) || sites.contains(origin) ||
         i.value().metaType().id() != QMetaType::QVariantMap)
-      return QObject::tr("Use a full site origin such as https://example.com:443, without a path or login.");
+      return QObject::tr("Use a full site origin such as "
+                         "https://example.com:443, without a path or login.");
     sites[origin] = i.value();
   }
   values["siteSettings"] = sites;
@@ -97,17 +203,11 @@ QString validatePreferences(QVariantMap &values) {
         !ok || rate < 0 || rate > 1000000000000LL)
       return QObject::tr("Invalid speed schedule.");
   }
-  for (const auto &value : values.value("syncJobs").toList()) {
-    auto entry = value.toMap();
-    const QUrl url(entry.value("url").toString());
-    const auto interval = entry.value("intervalMinutes").toLongLong();
-    const int depth = entry.value("depth", 1).toInt();
-    if (!url.isValid() ||
-        !QStringList{"http", "https"}.contains(url.scheme()) ||
-        url.host().isEmpty() || !url.userInfo().isEmpty() ||
-        !QFileInfo(entry.value("directory").toString()).isAbsolute() ||
-        interval < 1 || interval > 525600 || depth < 0 || depth > 5)
-      return QObject::tr("Invalid periodic website synchronization settings.");
+  for (const auto &key : QStringList{"syncJobs", "fileSyncJobs"}) {
+    const auto error =
+        validateProjects(values.value(key), key == "fileSyncJobs");
+    if (!error.isEmpty())
+      return error;
   }
   return {};
 }
@@ -123,6 +223,8 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
               {"retryDelaySeconds", 5},
               {"timeoutSeconds", 30},
               {"rateLimit", 0},
+              {"quotaMB", 0},
+              {"quotaPeriodMinutes", 1440},
               {"proxy", ""},
               {"clipboardMonitor", false},
               {"notifications", true},
@@ -135,7 +237,8 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
               {"typeFilter", ""},
               {"siteSettings", QVariantMap{}},
               {"speedSchedule", QVariantList{}},
-              {"syncJobs", QVariantList{}}};
+              {"syncJobs", QVariantList{}},
+              {"fileSyncJobs", QVariantList{}}};
   queueSettings.insert(mainQueue, queueDefault());
   QFile file(state + "/automation.json");
   if (file.exists()) {
@@ -157,8 +260,26 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
             object.value("queues").toObject().toVariantMap();
         if (!savedQueues.isEmpty())
           queueSettings = savedQueues;
+        if (object.contains("quota") &&
+            (!object.value("quota").isObject() ||
+             object.value("quota").toObject().isEmpty()))
+          failure = tr("Invalid saved quota accounting; existing file kept.");
+        pendingMirror = object.value("pendingMirror").toObject().toVariantMap();
+        if (object.contains("pendingMirror") &&
+            !object.value("pendingMirror").isObject())
+          failure = tr("Invalid saved grabber job; existing file kept.");
+        if (!pendingMirror.isEmpty()) {
+          const auto invalid =
+              validateProjects(QVariantList{pendingMirror}, false);
+          if (!invalid.isEmpty())
+            failure = invalid;
+        }
+        quotaState = object.value("quota").toObject().toVariantMap();
+        projectResults =
+            object.value("projectResults").toObject().toVariantMap();
         policies = object.value("policies").toObject().toVariantMap();
-        legacySiteSettings = object.value("legacySiteSettings").toObject().toVariantMap();
+        legacySiteSettings =
+            object.value("legacySiteSettings").toObject().toVariantMap();
         auto sites = settings.value("siteSettings").toMap();
         for (auto i = sites.begin(); i != sites.end();) {
           if (!isSiteOrigin(i.key())) {
@@ -171,12 +292,21 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
         settings["siteSettings"] = sites;
         for (auto i = queueSettings.begin(); i != queueSettings.end(); ++i) {
           auto q = i.value().toMap();
-          q["active"] = false;
+          bool quotaWaiting = false;
+          for (const auto &p : policies)
+            if (p.toMap().value("queue", mainQueue) == i.key() &&
+                p.toMap().value("quotaPaused").toBool())
+              quotaWaiting = true;
+          q["active"] = quotaWaiting;
+          const auto defaults = queueDefault();
+          for (auto field = defaults.begin(); field != defaults.end(); ++field)
+            if (!q.contains(field.key()))
+              q[field.key()] = field.value();
           i.value() = q;
         }
         for (auto i = policies.begin(); i != policies.end(); ++i) {
           auto p = i.value().toMap();
-          p["armed"] = false;
+          p["armed"] = p.value("quotaPaused", false);
           i.value() = p;
         }
       }
@@ -186,6 +316,29 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
     failure = validatePreferences(settings);
   if (!failure.isEmpty())
     settingsWritable = false;
+  if (quotaState.isEmpty()) {
+    QVariantMap baseline;
+    for (const auto &v : manager->downloads())
+      baseline[v.toMap().value("id").toString()] = v.toMap().value("received");
+    quotaState = {{"usedBytes", 0},
+                  {"periodStartedAt",
+                   QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+                  {"lastReceived", baseline}};
+  } else if (!integer(quotaState.value("usedBytes"), 0, 9007199254740991LL) ||
+             !QDateTime::fromString(
+                  quotaState.value("periodStartedAt").toString(), Qt::ISODate)
+                  .isValid() ||
+             quotaState.value("lastReceived").metaType().id() !=
+                 QMetaType::QVariantMap) {
+    settingsWritable = false;
+    failure = tr("Invalid saved quota accounting; existing file kept.");
+  }
+  const auto baseline = quotaState.value("lastReceived").toMap();
+  for (auto i = baseline.begin(); i != baseline.end(); ++i)
+    if (i.key().isEmpty() || !integer(i.value(), 0, 9007199254740991LL)) {
+      settingsWritable = false;
+      failure = tr("Invalid saved quota accounting; existing file kept.");
+    }
   for (const auto &value : manager->downloads()) {
     const auto job = value.toMap();
     const auto id = job.value("id").toString();
@@ -228,7 +381,8 @@ Automation::Automation(DownloadManager *backend, const QString &directory,
 Automation::~Automation() {
   tick.stop();
   completionTimer.stop();
-  cancelMirror();
+  cancelWorker("interrupted");
+  updateQuota();
   save();
 }
 bool Automation::reject(const QString &error) {
@@ -242,12 +396,19 @@ bool Automation::save() {
   QSaveFile file(state + "/automation.json");
   const auto data =
       QJsonDocument(
-          QJsonObject{{"version", 1},
-                      {"preferences", QJsonObject::fromVariantMap(settings)},
-                      {"queues", QJsonObject::fromVariantMap(queueSettings)},
-                      {"policies", QJsonObject::fromVariantMap(policies)},
-                      {"legacySiteSettings", QJsonObject::fromVariantMap(legacySiteSettings)}})
+          QJsonObject{
+              {"version", 1},
+              {"quota", QJsonObject::fromVariantMap(quotaState)},
+              {"projectResults", QJsonObject::fromVariantMap(projectResults)},
+              {"pendingMirror", QJsonObject::fromVariantMap(pendingMirror)},
+              {"preferences", QJsonObject::fromVariantMap(settings)},
+              {"queues", QJsonObject::fromVariantMap(queueSettings)},
+              {"policies", QJsonObject::fromVariantMap(policies)},
+              {"legacySiteSettings",
+               QJsonObject::fromVariantMap(legacySiteSettings)}})
           .toJson();
+  if (data.size() > 4 * 1024 * 1024)
+    return reject(tr("Automation settings exceed the 4 MB state limit."));
   if (!file.open(QIODevice::WriteOnly) ||
       !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) ||
       file.write(data) != data.size() || !file.commit())
@@ -281,8 +442,33 @@ bool Automation::configure(const QVariantMap &options) {
   settings = next;
   failure.clear();
   cancelCompletionAction();
+  const auto previousResults = projectResults;
+  for (const auto &list : QStringList{"fileSyncJobs", "syncJobs"}) {
+    QMap<QString, QVariantMap> old;
+    for (const auto &v : previous.value(list).toList())
+      old[projectKey(v.toMap())] = v.toMap();
+    for (const auto &v : settings.value(list).toList()) {
+      auto job = v.toMap();
+      auto before = old.value(projectKey(job));
+      const auto key = list + "/" + projectKey(job);
+      job.remove("nextRun");
+      before.remove("nextRun");
+      if (job != before)
+        projectResults.remove(key);
+    }
+  }
+  QSet<QString> retained;
+  for (const auto &list : QStringList{"fileSyncJobs", "syncJobs"})
+    for (const auto &v : settings.value(list).toList())
+      retained.insert(list + "/" + projectKey(v.toMap()));
+  for (auto i = projectResults.begin(); i != projectResults.end();)
+    if (!retained.contains(i.key()))
+      i = projectResults.erase(i);
+    else
+      ++i;
   if (!save()) {
     settings = previous;
+    projectResults = previousResults;
     emit changed();
     return false;
   }
@@ -310,7 +496,8 @@ QString Automation::enqueue(QVariantMap request) {
   if (!settingsWritable)
     return {};
   const auto url = normalizedUrl(request.value("url").toString());
-  const auto site = settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
+  const auto site =
+      settings.value("siteSettings").toMap().value(urlOrigin(url)).toMap();
   for (const auto &key :
        QStringList{"directory", "connections", "proxy", "username", "password"})
     if (!request.contains(key) && site.contains(key))
@@ -459,6 +646,7 @@ QVariantMap Automation::batch(const QVariantList &requests) {
 void Automation::pause(const QString &id) {
   auto p = policies.value(id).toMap();
   p["armed"] = false;
+  p["quotaPaused"] = false;
   policies[id] = p;
   manager->pause(id);
   save();
@@ -502,6 +690,7 @@ void Automation::resumeAll() {
       resume(v.toMap().value("id").toString());
 }
 void Automation::remove(const QString &id) {
+  updateQuota();
   manager->remove(id);
   policies.remove(id);
   processed.remove(id);
@@ -544,8 +733,8 @@ bool Automation::setQueue(const QString &name, const QVariantMap &policy) {
       return reject(tr("Unknown queue setting."));
     q[i.key()] = i.value();
   }
-  if (q["concurrent"].toInt() < 1 || q["concurrent"].toInt() > 32 ||
-      q["repeatMinutes"].toInt() < 0 || q["repeatMinutes"].toInt() > 525600)
+  if (!integer(q["concurrent"], 1, 32) ||
+      !integer(q["repeatMinutes"], 0, 525600))
     return reject(tr("Invalid queue limits."));
   for (const auto &key : QStringList{"startAt", "stopAt"})
     if (!q[key].toString().isEmpty() &&
@@ -641,22 +830,11 @@ void Automation::checkSchedules() {
       dirty = true;
     }
   }
-  auto sync = settings.value("syncJobs").toList();
-  for (int n = 0; n < sync.size(); ++n) {
-    auto s = sync[n].toMap();
-    auto when = QDateTime::fromString(s["nextRun"].toString(), Qt::ISODate);
-    if (s["intervalMinutes"].toInt() > 0 && (!when.isValid() || when <= now) &&
-        !mirrorProcess) {
-      if (mirror(s["url"].toString(), s["directory"].toString(),
-                 s.value("depth", 1).toInt())) {
-        s["nextRun"] = now.addSecs(s["intervalMinutes"].toInt() * 60)
-                           .toString(Qt::ISODate);
-        sync[n] = s;
-        dirty = true;
-      }
-    }
+  if (updateQuota()) {
+    if (!mirrorProcess && !pendingMirror.isEmpty() && !quotaBlocked())
+      startWorker(pendingMirror);
+    checkProjects();
   }
-  settings["syncJobs"] = sync;
   if (dirty)
     save();
   reconcile();
@@ -667,6 +845,11 @@ void Automation::reconcile() {
   if (reconciling)
     return;
   reconciling = true;
+  const bool accountingOK = updateQuota();
+  const bool blocked = !accountingOK || quotaBlocked();
+  if (blocked && mirrorProcess &&
+      mirrorProcess->state() != QProcess::NotRunning)
+    cancelWorker("quotaPaused");
   auto jobs = manager->downloads();
   QVariantList waiting;
   QMap<QString, int> counts;
@@ -685,6 +868,21 @@ void Automation::reconcile() {
         dirty = true;
       }
       continue;
+    }
+    if (blocked) {
+      if (policy.value("armed").toBool()) {
+        policy["quotaPaused"] = true;
+        policies[id] = policy;
+        dirty = true;
+      }
+      if (status == "downloading" || status == "probing")
+        manager->pause(id);
+      continue;
+    }
+    if (policy.value("quotaPaused").toBool()) {
+      policy["quotaPaused"] = false;
+      policies[id] = policy;
+      dirty = true;
     }
     if (status == "downloading" || status == "probing") {
       ++active;
@@ -999,8 +1197,190 @@ bool Automation::rename(const QString &id, const QString &filename) {
   emit changed();
   return true;
 }
-bool Automation::mirror(const QString &url, const QString &directory,
-                        int depth) {
+QVariantMap Automation::quota() const {
+  const auto start = QDateTime::fromString(
+      quotaState.value("periodStartedAt").toString(), Qt::ISODate);
+  return {{"limitBytes", settings.value("quotaMB").toLongLong() * 1024 * 1024},
+          {"usedBytes", quotaState.value("usedBytes", 0)},
+          {"periodStartedAt", start.toString(Qt::ISODate)},
+          {"resumeAt",
+           start.addSecs(settings.value("quotaPeriodMinutes").toLongLong() * 60)
+               .toString(Qt::ISODate)},
+          {"paused", quotaBlocked()},
+          {"accounting", "receivedBytes"}};
+}
+bool Automation::quotaBlocked() const {
+  const auto limit = settings.value("quotaMB").toLongLong() * 1024 * 1024;
+  return limit > 0 && quotaState.value("usedBytes").toLongLong() >= limit;
+}
+bool Automation::updateQuota() {
+  if (!settingsWritable)
+    return false;
+  const auto previous = quotaState;
+  const auto now = QDateTime::currentDateTimeUtc();
+  const auto start = QDateTime::fromString(
+      quotaState.value("periodStartedAt").toString(), Qt::ISODate);
+  const auto period = settings.value("quotaPeriodMinutes").toLongLong() * 60;
+  if (start.addSecs(period) <= now) {
+    quotaState["periodStartedAt"] =
+        start.addSecs((start.secsTo(now) / period) * period)
+            .toString(Qt::ISODate);
+    quotaState["usedBytes"] = 0;
+  }
+  auto received = quotaState.value("lastReceived").toMap();
+  QVariantMap current;
+  qint64 used = quotaState.value("usedBytes").toLongLong();
+  for (const auto &v : manager->downloads()) {
+    const auto job = v.toMap();
+    const auto id = job.value("id").toString();
+    const auto bytes = job.value("received").toLongLong();
+    const auto old = received.value(id, 0).toLongLong();
+    // shortcut: manager exposes saved-byte snapshots, so retries and checkpoint
+    // overshoot need a backend byte-budget hook for a strict network quota.
+    used += bytes >= old ? bytes - old : bytes;
+    current[id] = bytes;
+  }
+  quotaState["lastReceived"] = current;
+  quotaState["usedBytes"] = used;
+  if (quotaState != previous || accountingDirty) {
+    if (!save()) {
+      quotaState = previous;
+      accountingDirty = true;
+      return false;
+    }
+    accountingDirty = false;
+  }
+  return true;
+}
+QVariantList Automation::syncQueue() const {
+  QVariantList result;
+  for (const auto &v : settings.value("fileSyncJobs").toList()) {
+    auto job = v.toMap();
+    const auto key = projectKey(job);
+    const auto status = projectResults.value("fileSyncJobs/" + key).toMap();
+    for (auto i = status.begin(); i != status.end(); ++i)
+      job[i.key()] = i.value();
+    if (workerList == "fileSyncJobs" && workerKey == key)
+      job["status"] = "downloading";
+    else if (!job.contains("status"))
+      job["status"] = "waiting";
+    result.append(job);
+  }
+  return result;
+}
+void Automation::checkProjects() {
+  const auto now = QDateTime::currentDateTime();
+  for (const auto &list : QStringList{"fileSyncJobs", "syncJobs"}) {
+    auto projects = settings.value(list).toList();
+    bool runningFound = false;
+    for (int n = 0; n < projects.size(); ++n) {
+      auto job = projects[n].toMap();
+      const auto key = projectKey(job);
+      const auto stop =
+          QDateTime::fromString(job.value("stopAt").toString(), Qt::ISODate);
+      const bool enabled = job.value("enabled", true).toBool() &&
+                           (!stop.isValid() || stop > now);
+      if (workerList == list && workerKey == key) {
+        runningFound = true;
+        if (!enabled)
+          cancelMirror();
+      }
+      if (!enabled || mirrorProcess || quotaBlocked())
+        continue;
+      const auto start =
+          QDateTime::fromString(job.value("startAt").toString(), Qt::ISODate);
+      const auto next =
+          QDateTime::fromString(job.value("nextRun").toString(), Qt::ISODate);
+      const auto previous = projectResults.value(list + "/" + key).toMap();
+      const bool quotaRetry = previous.value("status") == "quotaPaused" ||
+                              previous.value("status") == "downloading" ||
+                              previous.value("status") == "interrupted";
+      const int interval =
+          job.value("intervalMinutes", list == "fileSyncJobs" ? 1 : 0).toInt();
+      if ((start.isValid() && start > now) ||
+          (!quotaRetry && next.isValid() && next > now) ||
+          (!quotaRetry && interval == 0 && previous.contains("lastRun")))
+        continue;
+      if (interval > 0)
+        job["nextRun"] = now.addSecs(interval * 60).toString(Qt::ISODate);
+      projects[n] = job;
+      settings[list] = projects;
+      if (!save())
+        return;
+      QVariantMap request{{"url", job.value("url")},
+                          {"directory", job.value("directory")}};
+      if (list == "fileSyncJobs") {
+        request["mode"] = "file";
+        request["filename"] = job.value("filename");
+      } else {
+        request["depth"] = job.value("depth", 1);
+        request["include"] = job.value("include", QVariantList{});
+        request["exclude"] = job.value("exclude", QVariantList{});
+      }
+      if (startWorker(request, list, key)) {
+        projectResults[list + "/" + key] = QVariantMap{
+            {"status", "downloading"}, {"lastRun", now.toString(Qt::ISODate)}};
+        save();
+        runningFound = true;
+      }
+    }
+    if (workerList == list && !runningFound)
+      cancelMirror();
+  }
+}
+void Automation::finishProject(const QString &status) {
+  if (workerKey.isEmpty() && status != "quotaPaused" &&
+      status != "interrupted") {
+    pendingMirror.clear();
+    save();
+  }
+  if (!workerKey.isEmpty()) {
+    auto result = projectResults.value(workerList + "/" + workerKey).toMap();
+    result["status"] = status;
+    result["error"] = mirrorState.value("error");
+    result["transferredBytes"] = workerTransferred;
+    result["unchanged"] = mirrorState.value("unchanged", false);
+    projectResults[workerList + "/" + workerKey] = result;
+    workerKey.clear();
+    workerList.clear();
+    save();
+  }
+}
+void Automation::readWorkerOutput(QProcess *process, QByteArray &buffer) {
+  buffer.append(process->readAllStandardOutput());
+  while (buffer.contains('\n')) {
+    const auto pos = buffer.indexOf('\n');
+    const auto event = QJsonDocument::fromJson(buffer.left(pos)).object();
+    buffer.remove(0, pos + 1);
+    const auto transferred =
+        event.value("transferredBytes").toVariant().toLongLong();
+    if (transferred > workerTransferred) {
+      quotaState["usedBytes"] = quotaState.value("usedBytes").toLongLong() +
+                                transferred - workerTransferred;
+      workerTransferred = transferred;
+      if (!save()) {
+        accountingDirty = true;
+        process->kill();
+        mirrorState["error"] = tr("Cannot persist download quota accounting.");
+      }
+    }
+    if (event.contains("error"))
+      mirrorState["error"] = event.value("error").toString();
+    if (event.contains("bytes"))
+      mirrorState["received"] = event.value("bytes").toVariant();
+    if (event.contains("files"))
+      mirrorState["total"] = event.value("files").toVariant();
+    if (event.contains("unchanged"))
+      mirrorState["unchanged"] = event.value("unchanged").toBool();
+    mirrorState["transferredBytes"] = workerTransferred;
+    emit changed();
+  }
+}
+bool Automation::mirror(const QString &url, const QString &directory, int depth,
+                        const QVariantMap &filters) {
+  if (!settingsWritable)
+    return reject(
+        tr("Repair unreadable automation settings before starting projects."));
   if (mirrorProcess)
     return reject(tr("A website grab is already running."));
   const QUrl parsed(url);
@@ -1010,6 +1390,24 @@ bool Automation::mirror(const QString &url, const QString &directory,
       !QFileInfo(directory).isAbsolute() || depth < 0 || depth > 5)
     return reject(tr("Choose an HTTP(S) URL, absolute destination and depth "
                      "from zero to five."));
+  QVariantMap job{{"url", url}, {"directory", directory}, {"depth", depth}};
+  for (auto i = filters.begin(); i != filters.end(); ++i) {
+    if (i.key() != "include" && i.key() != "exclude")
+      return reject(tr("Unknown grabber filter setting."));
+    job[i.key()] = i.value();
+  }
+  const auto error = validateProjects(QVariantList{job}, false);
+  if (!error.isEmpty())
+    return reject(error);
+  return startWorker(job);
+}
+bool Automation::startWorker(QVariantMap job, const QString &list,
+                             const QString &key) {
+  if (mirrorProcess || !settingsWritable || !updateQuota() || quotaBlocked())
+    return reject(
+        tr("Download quota is exhausted or accounting is unavailable."));
+  const auto directory = job.value("directory").toString();
+  const auto url = job.value("url").toString();
   if (!QDir().mkpath(directory))
     return reject(tr("Cannot create website destination."));
   QFile source(":/website_worker.py");
@@ -1024,14 +1422,18 @@ bool Automation::mirror(const QString &url, const QString &directory,
       scriptFile.write(scriptBytes) != scriptBytes.size() ||
       !scriptFile.commit())
     return reject(tr("Cannot prepare website grabber."));
+  const auto inputJob = job;
   QSaveFile jobFile(jobPath);
+  job["maxFiles"] = 500;
+  job["maxBytes"] = 500 * 1024 * 1024;
+  job["transferLimit"] = 1024LL * 1024 * 1024 * 1024;
+  if (settings.value("quotaMB").toLongLong() > 0)
+    job["transferLimit"] =
+        std::min<qint64>(1024LL * 1024 * 1024 * 1024,
+                         settings.value("quotaMB").toLongLong() * 1024 * 1024 -
+                             quotaState.value("usedBytes").toLongLong());
   const auto jobBytes =
-      QJsonDocument(QJsonObject{{"url", url},
-                                {"directory", directory},
-                                {"depth", depth},
-                                {"maxFiles", 500},
-                                {"maxBytes", 500 * 1024 * 1024}})
-          .toJson();
+      QJsonDocument(QJsonObject::fromVariantMap(job)).toJson();
   if (!jobFile.open(QIODevice::WriteOnly) ||
       !jobFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner) ||
       jobFile.write(jobBytes) != jobBytes.size() || !jobFile.commit())
@@ -1039,56 +1441,70 @@ bool Automation::mirror(const QString &url, const QString &directory,
   mirrorState = {
       {"status", "downloading"}, {"url", url}, {"directory", directory},
       {"received", 0},           {"total", 0}, {"error", ""}};
+  if (list.isEmpty()) {
+    const auto previous = pendingMirror;
+    pendingMirror = inputJob;
+    if (!save()) {
+      pendingMirror = previous;
+      return false;
+    }
+  }
+  workerKey = key;
+  workerList = list;
+  workerTransferred = 0;
+  mirrorState["mode"] = job.value("mode", "website");
+  mirrorState["transferredBytes"] = 0;
   mirrorProcess = new QProcess(this);
   auto *process = mirrorProcess;
   auto buffer = std::make_shared<QByteArray>();
   connect(process, &QProcess::readyReadStandardOutput, this,
           [this, process, buffer] {
-            buffer->append(process->readAllStandardOutput());
-            while (buffer->contains('\n')) {
-              const int pos = buffer->indexOf('\n');
-              const auto line = buffer->left(pos);
-              buffer->remove(0, pos + 1);
-              const auto event = QJsonDocument::fromJson(line).object();
-              if (event.value("event") == "error")
-                mirrorState["error"] = event.value("error").toString();
-              mirrorState["received"] = event.value("bytes").toVariant();
-              mirrorState["total"] = event.value("files").toVariant();
-              emit changed();
-            }
+            readWorkerOutput(process, *buffer);
+            QTimer::singleShot(0, this, [this] { reconcile(); });
           });
-  connect(process, &QProcess::finished, this,
-          [this, process, jobPath](int code, QProcess::ExitStatus status) {
-            mirrorState["status"] = code == 0 && status == QProcess::NormalExit
-                                        ? "complete"
-                                        : "error";
-            if (mirrorState["status"] == "error" &&
-                mirrorState["error"].toString().isEmpty())
-              mirrorState["error"] =
-                  QString::fromUtf8(process->readAllStandardError()).trimmed();
-            if (mirrorProcess == process)
-              mirrorProcess = nullptr;
-            process->deleteLater();
-            QFile::remove(jobPath);
-            emit changed();
-          });
+  connect(
+      process, &QProcess::finished, this,
+      [this, process, jobPath, buffer](int code, QProcess::ExitStatus status) {
+        readWorkerOutput(process, *buffer);
+        mirrorState["status"] = code == 0 && status == QProcess::NormalExit
+                                    ? "complete"
+                                : code == 2 ? "quotaPaused"
+                                            : "error";
+        finishProject(mirrorState.value("status").toString());
+        if (mirrorState["status"] == "error" &&
+            mirrorState["error"].toString().isEmpty())
+          mirrorState["error"] =
+              QString::fromUtf8(process->readAllStandardError()).trimmed();
+        if (mirrorProcess == process)
+          mirrorProcess = nullptr;
+        process->deleteLater();
+        QFile::remove(jobPath);
+        emit changed();
+      });
   connect(process, &QProcess::errorOccurred, this,
           [this, process](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart) {
               mirrorState["status"] = "error";
               mirrorState["error"] = process->errorString();
+              finishProject("error");
               if (mirrorProcess == process)
                 mirrorProcess = nullptr;
               process->deleteLater();
               emit changed();
             }
           });
+  cancelCompletionAction();
   process->start("/usr/bin/python3", {script, jobPath});
   failure.clear();
   emit changed();
   return true;
 }
 void Automation::cancelMirror() {
+  pendingMirror.clear();
+  cancelWorker("paused");
+  save();
+}
+void Automation::cancelWorker(const QString &status) {
   if (!mirrorProcess)
     return;
   auto *process = mirrorProcess;
@@ -1096,7 +1512,10 @@ void Automation::cancelMirror() {
   process->disconnect(this);
   process->kill();
   process->waitForFinished(2000);
+  QByteArray buffer;
+  readWorkerOutput(process, buffer);
   process->deleteLater();
-  mirrorState["status"] = "paused";
+  mirrorState["status"] = status;
+  finishProject(status);
   emit changed();
 }

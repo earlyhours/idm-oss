@@ -3,6 +3,7 @@
 import codecs
 from collections import deque
 import fcntl
+from fnmatch import fnmatchcase
 import hashlib
 from html import escape
 from html.parser import HTMLParser
@@ -202,11 +203,25 @@ class SameOriginRedirect(HTTPRedirectHandler):
         return super().redirect_request(request, fp, code, message, headers, target)
 
 
+class QuotaExceeded(ValueError):
+    pass
+
+
 class Mirror:
     def __init__(self, job):
         self.url = canonical(job.get('url'))
         if not self.url:
             raise ValueError('Website URL must be HTTP or HTTPS without embedded credentials')
+        self.mode = job.get('mode', 'website')
+        if self.mode not in ('website', 'file'):
+            raise ValueError('Unsupported synchronization mode')
+        self.filename = job.get('filename', '')
+        if self.mode == 'file' and (not isinstance(self.filename, str) or not self.filename or
+                self.filename in ('.', '..') or self.filename.startswith('.idm-') or
+                len(self.filename.encode()) > 180 or re.search(r'[/\\\x00-\x1f\x7f]', self.filename)):
+            raise ValueError('File synchronization needs a plain filename without reserved .idm- prefix')
+        self.report_transfer = 'transferLimit' in job
+        self.transfer_limit = self.number(job, 'transferLimit', 1024 * 1024 * 1024, 0, 1024 * 1024 * 1024 * 1024)
         self.selected = origin(self.url)
         directory = job.get('directory')
         if not isinstance(directory, str) or not Path(directory).is_absolute():
@@ -216,11 +231,14 @@ class Mirror:
         self.depth = self.number(job, 'depth', 2, 0, 10)
         self.max_files = self.number(job, 'maxFiles', 100, 1, 10000)
         self.max_bytes = self.number(job, 'maxBytes', 50 * 1024 * 1024, 1, 1024 * 1024 * 1024)
+        self.include = self.filters(job, 'include')
+        self.exclude = self.filters(job, 'exclude')
         self.headers = self.parse_headers(job.get('headers', {}))
         self.timeout = self.number(job, 'timeout', 20, 1, 120)
         self.opener = build_opener(SameOriginRedirect(self.selected))
         self.manifest = {'version': 1, 'url': self.url, 'origin': list(self.selected), 'resources': {}, 'managed': {}}
-        self.manifest_path = self.path(MANIFEST)
+        self.manifest_name = MANIFEST if self.mode == 'website' else '.idm-file-' + digest(self.filename.encode()) + '.json'
+        self.manifest_path = self.path(self.manifest_name)
         self.files = 0
         self.bytes = 0
         self.transferred = 0
@@ -245,6 +263,20 @@ class Mirror:
         if type(value) is not int or not low <= value <= high:
             raise ValueError(f'{name} must be between {low} and {high}')
         return value
+
+    @staticmethod
+    def filters(job, name):
+        values = job.get(name, [])
+        if not isinstance(values, list) or len(values) > 32 or any(
+                not isinstance(value, str) or not value or len(value) > 256 or
+                re.search(r'[\x00-\x1f\x7f]', value) for value in values):
+            raise ValueError(name + ' must contain at most 32 nonempty wildcard patterns of at most 256 characters')
+        return values
+
+    def included(self, url):
+        path = unquote(urlsplit(url).path).lstrip('/')
+        return (not self.include or any(fnmatchcase(path, pattern) for pattern in self.include)) and not any(
+            fnmatchcase(path, pattern) for pattern in self.exclude)
 
     @staticmethod
     def parse_headers(headers):
@@ -278,7 +310,7 @@ class Mirror:
             raise ValueError('Website output escaped selected directory')
         return destination
 
-    def atomic(self, path, data):
+    def atomic(self, path, data, owned=None):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         descriptor, temporary = tempfile.mkstemp(prefix='.idm-write-', dir=path.parent)
         try:
@@ -286,13 +318,26 @@ class Mirror:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
+            self.path(path.relative_to(self.root).as_posix())
+            if owned is not None:
+                if path.exists():
+                    if not path.is_file():
+                        raise ValueError('Managed synchronization target is not a regular file')
+                    with path.open('rb') as stream:
+                        actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    if actual not in owned:
+                        raise ValueError('Refusing to overwrite an unrelated or modified file: ' + path.name)
+                else:
+                    # Hard-link creation cannot clobber a file created while downloading.
+                    os.link(temporary, path)
+                    return
             os.replace(temporary, path)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
     def save(self):
-        self.atomic(self.path(MANIFEST), (json.dumps(self.manifest, ensure_ascii=False, indent=2) + '\n').encode())
+        self.atomic(self.path(self.manifest_name), (json.dumps(self.manifest, ensure_ascii=False, indent=2) + '\n').encode())
 
     def managed_write(self, relative, data):
         path = self.path(relative)
@@ -316,7 +361,7 @@ class Mirror:
         # Persist ownership intent first so interrupted atomic writes can be resumed safely.
         self.manifest['managed'][relative] = list(dict.fromkeys([expected] + ([previous] if previous else [])))
         self.save()
-        self.atomic(path, data)
+        self.atomic(path, data, [previous] if previous else [])
         self.manifest['managed'][relative] = [expected]
         self.save()
 
@@ -362,15 +407,22 @@ class Mirror:
             chunks = []
             size = 0
             while True:
-                chunk = response.read(min(65536, limit - size + 1))
+                remaining = self.transfer_limit - self.transferred
+                if remaining <= 0:
+                    if length and length.isdigit() and size == int(length):
+                        break
+                    raise QuotaExceeded('Download quota exhausted; waiting for the next period')
+                chunk = response.read(min(65536, limit - size + 1, remaining))
                 if not chunk:
                     break
                 size += len(chunk)
+                self.transferred += len(chunk)
+                if self.report_transfer:
+                    emit('transfer', transferredBytes=self.transferred)
                 if size > limit:
                     raise ValueError('Website byte budget exceeded')
                 chunks.append(chunk)
             data = b''.join(chunks)
-            self.transferred += len(data)
             encoding = response.headers.get('Content-Encoding', '').strip().lower()
             if encoding in ('gzip', 'x-gzip', 'deflate'):
                 modes = [16 + zlib.MAX_WBITS] if encoding != 'deflate' else [zlib.MAX_WBITS, -zlib.MAX_WBITS]
@@ -417,9 +469,24 @@ class Mirror:
             except BlockingIOError as error:
                 raise ValueError('Another website job is already using this directory') from error
             self.load_manifest()
-            return self.crawl()
+            return self.sync_file() if self.mode == 'file' else self.crawl()
         finally:
             os.close(lock)
+
+    def sync_file(self):
+        previous = self.manifest['resources'].get(self.url)
+        if previous and previous.get('path') != self.filename:
+            raise ValueError('File synchronization manifest has a different output')
+        data, content_type, etag, modified, final_url, status = self.fetch(self.url)
+        self.managed_write(self.filename, data)
+        self.manifest['resources'][self.url] = {
+            'path': self.filename, 'rawPath': self.filename, 'rawSha256': digest(data),
+            'contentType': content_type, 'etag': etag, 'lastModified': modified, 'finalUrl': final_url}
+        self.save()
+        emit('complete', ok=True, files=1, bytes=len(data), transferredBytes=self.transferred,
+             status=status, unchanged=status == 304 or bool(previous and previous.get('rawSha256') == digest(data)),
+             entry=str(self.path(self.filename)))
+        return 0
 
     def crawl(self):
         queue = deque([(self.url, 0, True)])
@@ -453,6 +520,9 @@ class Mirror:
                     self.skipped_external += 1
                     return target
                 target = self.aliases.get(target, target)
+                # Discovery pages and stylesheets are needed even for an images-only grab.
+                if not page and not self.included(target) and not urlsplit(target).path.lower().endswith('.css'):
+                    return target
                 if target not in discovered:
                     if page and depth >= self.depth:
                         self.limited = True
@@ -470,6 +540,8 @@ class Mirror:
                 base = final_url
                 css_transform(decode_text(data, content_type), discover)
         for url, (entry, data) in current.items():
+            if not self.included(url):
+                continue
             content_type = entry['contentType']
             final_url = entry['finalUrl']
             def rewrite(value, _page):
@@ -479,7 +551,7 @@ class Mirror:
                 target = self.aliases.get(target, target)
                 resource = self.manifest['resources'].get(target)
                 fragment = urldefrag(urljoin(base, value))[1]
-                if (resource and resource['path'] in self.manifest['managed']) or target in current:
+                if self.included(target) and ((resource and resource['path'] in self.manifest['managed']) or target in current):
                     local = current[target][0]['path'] if target in current else resource['path']
                     return posixpath.relpath(local, posixpath.dirname(entry['path']) or '.') + ('#' + fragment if fragment else '')
                 return target + ('#' + fragment if fragment else '')
@@ -498,7 +570,7 @@ class Mirror:
             self.managed_write(entry['path'], data)
         self.save()
         emit('complete', ok=True, files=self.files, bytes=self.bytes, transferredBytes=self.transferred,
-             limited=self.limited, skippedExternal=self.skipped_external, manifest=str(self.manifest_path), entry=str(self.root / 'index.html'))
+             limited=self.limited, skippedExternal=self.skipped_external, manifest=str(self.manifest_path), entry=str(self.root / 'index.html') if self.included(self.url) else '')
         return 0
 
 
@@ -514,6 +586,9 @@ def main(argv=None):
         if job.get('headers') and (stat.S_IMODE(job_path.stat().st_mode) & 0o077):
             raise ValueError('Website job files containing headers must be private to their owner')
         return Mirror(job).run()
+    except QuotaExceeded as error:
+        emit('quota', ok=False, error=str(error))
+        return 2
     except Exception as error:
         emit('error', ok=False, error=str(error))
         return 1

@@ -14,9 +14,12 @@ class Automation : public QObject {
   Q_PROPERTY(QVariantMap jobPolicies READ jobPolicies NOTIFY changed)
   Q_PROPERTY(QVariantList queues READ queues NOTIFY changed)
   Q_PROPERTY(QVariantMap grabber READ grabber NOTIFY changed)
+  Q_PROPERTY(QVariantMap quota READ quota NOTIFY changed)
+  Q_PROPERTY(QVariantList syncQueue READ syncQueue NOTIFY changed)
   Q_PROPERTY(QString error READ error NOTIFY changed)
   Q_PROPERTY(QString completionNotice READ completionNotice NOTIFY changed)
-  Q_PROPERTY(bool hasLegacySiteSettings READ hasLegacySiteSettings NOTIFY changed)
+  Q_PROPERTY(
+      bool hasLegacySiteSettings READ hasLegacySiteSettings NOTIFY changed)
 public:
   using Executor = std::function<void(
       const QStringList &, std::function<void(int, const QString &)>)>;
@@ -27,6 +30,8 @@ public:
   QVariantMap jobPolicies() const { return policies; }
   QVariantList queues() const;
   QVariantMap grabber() const { return mirrorState; }
+  QVariantMap quota() const;
+  QVariantList syncQueue() const;
   QString error() const { return failure; }
   QString completionNotice() const { return notice; }
   bool hasLegacySiteSettings() const { return !legacySiteSettings.isEmpty(); }
@@ -50,7 +55,7 @@ public:
   Q_INVOKABLE bool refresh(const QString &id, const QString &url);
   Q_INVOKABLE bool rename(const QString &id, const QString &filename);
   Q_INVOKABLE bool mirror(const QString &url, const QString &directory,
-                          int depth = 1);
+                          int depth = 1, const QVariantMap &filters = {});
   Q_INVOKABLE void cancelMirror();
   Q_INVOKABLE void cancelCompletionAction();
   Q_INVOKABLE void checkSchedules();
@@ -61,15 +66,27 @@ signals:
 private:
   DownloadManager *manager;
   QString state, failure, notice;
-  QVariantMap settings, queueSettings, policies, mirrorState, legacySiteSettings;
+  QVariantMap settings, queueSettings, policies, mirrorState,
+      legacySiteSettings;
+  QVariantMap quotaState, projectResults, pendingMirror;
+  QString workerKey, workerList;
+  qint64 workerTransferred = 0;
   QSet<QString> processed, scanning, unsafe;
   QTimer tick, completionTimer;
   QProcess *mirrorProcess = nullptr;
   Executor executor;
   bool pending = false, reconciling = false;
-  bool settingsWritable = true;
+  bool settingsWritable = true, accountingDirty = false;
   qint64 lastRate = -1;
   bool save();
+  bool updateQuota();
+  bool quotaBlocked() const;
+  bool startWorker(QVariantMap job, const QString &list = {},
+                   const QString &key = {});
+  void readWorkerOutput(QProcess *process, QByteArray &buffer);
+  void cancelWorker(const QString &status);
+  void finishProject(const QString &status);
+  void checkProjects();
   bool reject(const QString &error);
   void reconcile();
   void completed(const QVariantMap &job);
