@@ -119,12 +119,12 @@ The reproducible comparison runs ordinary curl, IDM Native with one connection, 
 
 | Scenario | Ordinary curl | Native, 1 connection | Native, 4 connections | Final bytes |
 |---|---:|---:|---:|---|
-| Local, unthrottled | 0.006 s | 0.068 s | 0.096 s | Identical SHA-256 |
-| Local, 2 MiB/s per connection | 1.016 s | 1.067 s | 0.323 s | Identical SHA-256 |
-| Server ignores Range | 0.006 s | 0.075 s | 0.083 s | Identical SHA-256 |
-| Unknown Content-Length | 0.006 s | 0.068 s | 0.092 s | Identical SHA-256 |
-| HTTP redirect | 0.008 s | 0.096 s | 0.140 s | Identical SHA-256 |
-| Public Python 3.13.0 source archive | 8.396 s | 6.940 s | 8.920 s | Identical SHA-256 |
+| Local, unthrottled | 0.006 s | 0.059 s | 0.101 s | Identical SHA-256 |
+| Local, 2 MiB/s per connection | 1.015 s | 1.069 s | 0.312 s | Identical SHA-256 |
+| Server ignores Range | 0.007 s | 0.059 s | 0.058 s | Identical SHA-256 |
+| Unknown Content-Length | 0.006 s | 0.061 s | 0.057 s | Identical SHA-256 |
+| HTTP redirect | 0.007 s | 0.100 s | 0.104 s | Identical SHA-256 |
+| Public Python 3.13.0 source archive | 63.870 s | 65.125 s | 58.454 s | Identical SHA-256 |
 
 These are medians from this machine, not measurements against original Windows IDM. Parallelism helps a server that limits each connection; startup overhead makes the app slower for tiny local transfers. The public result includes Internet and server variability and does not show a universal speed advantage. The public archive was downloaded by every client, three times each.
 
