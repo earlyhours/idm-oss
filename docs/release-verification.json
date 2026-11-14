@@ -1,0 +1,42 @@
+{
+  "version": "0.3.0",
+  "sourceCommit": "ed3b57fe5541fad4b9317809407c29f559be19e6",
+  "integratedCheck": "bin/check",
+  "integratedCheckPassed": true,
+  "originalWindowsIdmTested": false,
+  "package": "idm-native-0.3.0-1-x86_64.pkg.tar.zst",
+  "packageSha256": "16ba5f4c53a1ab3fa591ac46cbaf52a5399e78ac0ace1137a80cafe618d27e56",
+  "buildBinarySha256": "28381961ce1681d7777604fcb5b2e930a65164f7f62a7d1f9f8fe12fb0fff1b2",
+  "packagedBinarySha256": "4458e32e0a6c5e5d61aac5bb10ce5e5c8271bc1450bf16ff840486a670a46e9f",
+  "packagedBinaryVersion": "idm-native 0.3.0",
+  "packagedDownloadSha256": "59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850",
+  "packagedBrowserVersions": {
+    "chromium": "0.3.0",
+    "firefox": "0.3.0"
+  },
+  "systemInstallationChanged": false,
+  "firefoxCompatibleE2EPassed": true,
+  "packagedGuiSmokePassed": true,
+  "verifiedAt": "2026-11-14T06:05:49.130366+00:00",
+  "checks": {
+    "bin/check": {
+      "exitCode": 0,
+      "sourceCommit": "cb956fd82f4ba4ec01d20812972c3b9d2c5d3b03"
+    },
+    "python3 tests/firefox_e2e.py": {
+      "exitCode": 0,
+      "browser": "Zen 1.24.2b, isolated headless profile"
+    },
+    "extracted Arch package": {
+      "version": true,
+      "guiRender": true,
+      "exactDownloadBytes": true
+    },
+    "canonical repository desktop and startup checks": {
+      "exitCode": 0,
+      "sourceCommit": "ed3b57fe5541fad4b9317809407c29f559be19e6"
+    }
+  },
+  "fullSuiteSourceCommit": "cb956fd82f4ba4ec01d20812972c3b9d2c5d3b03",
+  "downloadComparisonSourceCommit": "cb956fd82f4ba4ec01d20812972c3b9d2c5d3b03"
+}
