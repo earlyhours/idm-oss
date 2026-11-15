@@ -69,6 +69,10 @@ def resource_key(url):
     return parts.scheme, parts.hostname, parts.port or {"http": 80, "https": 443, "ftp": 21, "ftps": 990}[parts.scheme], parts.path
 
 
+def http_resource_key(url):
+    return (*resource_key(url), urllib.parse.urlsplit(url).query)
+
+
 def save_metadata(path, metadata):
     temporary = private_file(path.with_suffix(".tmp"))
     with temporary.open("w") as stream:
@@ -165,7 +169,7 @@ class CurlHTTP:
         self.config, self.context = config, context
         self.source = origin(config["url"])
 
-    def fetch(self, url, headers=None, data=None, method="GET", output=None, header_path=None, progress=None):
+    def fetch(self, url, headers=None, data=None, method="GET", output=None, header_path=None, progress=None, response_url_path=None):
         origin(url)
         scratch = tempfile.TemporaryDirectory(prefix="request-", dir=self.config["directory"])
         try:
@@ -182,6 +186,8 @@ class CurlHTTP:
                     payload = Path(scratch.name) / "data"
                     payload.write_bytes(data)
                     settings += ["data-binary = " + curl_quote("@" + str(payload))]
+                if response_url_path is not None:
+                    save_metadata(response_url_path, dict(url=url))
                 curl_transfer(self.config, settings, body, dump, progress)
                 status, fields = response_headers(dump)
                 if method == "HEAD":
@@ -208,6 +214,7 @@ def run_http(config):
     work = Path(config["directory"]).resolve(strict=True)
     partial, incoming = private_file(work / "partial.bin"), private_file(work / "incoming.bin")
     record, dump = private_file(work / "resume.json"), private_file(work / "incoming.headers")
+    response_url = private_file(work / "incoming.url.json")
     for stale in work.glob("request-*"):
         if stale.is_symlink() or not stale.is_dir():
             raise ValueError("Unsafe request working directory")
@@ -217,13 +224,18 @@ def run_http(config):
     if saved and saved.get("header") == "Last-Modified" and saved.get("dateStrong") is not True:
         raise ValueError("Old date-validated partials cannot be verified safely; start a new download")
 
+    if saved and not saved.get("effectiveUrl") and ((partial.exists() and partial.stat().st_size) or (incoming.exists() and incoming.stat().st_size)):
+        raise ValueError("Saved partials lack a verified resource URL")
+
     def absorb():
         if not incoming.exists():
             return
         status, fields = response_headers(dump)
         offset, total = saved["offset"], saved["total"]
         expected = f"bytes {offset}-{total - 1}/{total}"
-        if (status != 206 or fields.get("Content-Range") != expected or
+        if (not response_url.exists() or
+                http_resource_key(json.loads(response_url.read_text())["url"]) != http_resource_key(saved["effectiveUrl"]) or
+                status != 206 or fields.get("Content-Range") != expected or
                 fields.get(saved["header"]) != saved["validator"] or
                 fields.get("Content-Encoding", "identity").lower() != "identity" or
                 incoming.stat().st_size > total - offset or
@@ -265,7 +277,7 @@ def run_http(config):
         emit(type="progress", received=offset + size, total=saved["total"] if saved else -1,
              speed=size / max(.001, time.monotonic() - started), eta=-1)
 
-    status, fields, probe, _ = transport.fetch(config["url"], {"Range": "bytes=0-0"}, progress=progress)
+    status, fields, probe, effective_url = transport.fetch(config["url"], {"Range": "bytes=0-0"}, progress=progress)
     try:
         if status == 200:
             if offset:
@@ -302,16 +314,19 @@ def run_http(config):
                 output = work / "verified.bin"
                 emit(type="metadata", resumable=False, httpStatus=status)
             else:
-                if saved and (saved["total"], saved["header"], saved["validator"]) != (total, header, validator):
+                expected_url = saved.get("effectiveUrl", config["url"]) if saved else effective_url
+                if saved and http_resource_key(expected_url) == http_resource_key(saved["url"]):
+                    expected_url = config["url"]  # Explicit refresh of a direct URL may renew its query token.
+                if saved and (http_resource_key(expected_url), saved["total"], saved["header"], saved["validator"]) != (http_resource_key(effective_url), total, header, validator):
                     raise ValueError("Changed resume resource")
                 if offset > total:
                     raise ValueError("Oversized partial")
-                saved = dict(url=config["url"], total=total, header=header, validator=validator, offset=offset, dateStrong=header == "Last-Modified")
+                saved = dict(url=config["url"], effectiveUrl=effective_url, total=total, header=header, validator=validator, offset=offset, dateStrong=header == "Last-Modified")
                 save_metadata(record, saved)
                 emit(type="metadata", resumable=True, httpStatus=206)
                 if offset < total:
                     status, fields, stream, _ = transport.fetch(config["url"], {"Range": f"bytes={offset}-{total - 1}", "If-Range": validator},
-                                                               output=incoming, header_path=dump, progress=progress)
+                                                               output=incoming, header_path=dump, progress=progress, response_url_path=response_url)
                     stream.close()
                     absorb()
                 if not partial.exists() or partial.stat().st_size != total:

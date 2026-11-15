@@ -414,7 +414,7 @@ class Mirror:
             if not final_url or origin(final_url) != self.selected:
                 raise ValueError('Response escaped the selected origin')
             limit = self.max_bytes - self.bytes
-            length = response.headers.get('Content-Length')
+            length = response.headers.get('Content-Length', '').strip()
             if length and length.isdigit() and int(length) > limit:
                 raise ValueError('Website byte budget exceeded')
             chunks = []
@@ -435,6 +435,8 @@ class Mirror:
                 if size > limit:
                     raise ValueError('Website byte budget exceeded')
                 chunks.append(chunk)
+            if length and length.isdigit() and size != int(length):
+                raise ValueError('Incomplete website response')
             data = b''.join(chunks)
             encoding = response.headers.get('Content-Encoding', '').strip().lower()
             if encoding in ('gzip', 'x-gzip', 'deflate'):

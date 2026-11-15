@@ -32,6 +32,7 @@
 extern "C" int idm_copy_fd(int input, int output, std::uint64_t length);
 
 namespace {
+constexpr qint64 MaxQueueBytes = 16 * 1024 * 1024;
 bool httpUrl(const QUrl &url) {
     return url.isValid() && (url.scheme() == "http" || url.scheme() == "https") && !url.host().isEmpty() && url.userInfo().isEmpty();
 }
@@ -101,7 +102,7 @@ struct DownloadManager::Impl {
     };
     struct Job {
         QString id, url, path, status = "paused", error, title, pageUrl, description;
-        QString format, authMethod = "auto";
+        QString format, effectiveUrl, authMethod = "auto";
         bool dateValidatorStrong = false;
         bool workerResumable = false;
         QString created = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
@@ -176,12 +177,13 @@ struct DownloadManager::Impl {
             rows.append(QJsonObject{{"id", j->id}, {"url", j->url}, {"path", j->path}, {"status", j->status}, {"error", j->error},
                         {"connections", j->connections}, {"timeoutSeconds", j->timeoutSeconds}, {"rateLimitBytes", QString::number(j->rateLimitBytes)},
                         {"workerResumable",j->workerResumable},{"authMethod",j->authMethod},{"username",j->username},{"password",j->password},{"proxy",QJsonObject::fromVariantMap(j->proxy)}, {"total", QString::number(j->total)}, {"ranged", j->ranged},
-                        {"dateValidatorStrong",j->dateValidatorStrong},{"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts},
+                        {"effectiveUrl",j->effectiveUrl},{"dateValidatorStrong",j->dateValidatorStrong},{"validator", QString::fromLatin1(j->validator.toBase64())}, {"validatorHeader", QString::fromLatin1(j->validatorHeader)}, {"parts", parts},
                         {"headers", QJsonObject::fromVariantMap(j->headers)}, {"created", j->created}, {"title", j->title}, {"pageUrl", j->pageUrl},
                         {"description", j->description}, {"format", j->format}, {"media", j->media}, {"mediaReceived", QString::number(received(*j))}});
         }
-        QSaveFile file(root + "/queue.json");
         const QByteArray bytes = QJsonDocument(QJsonObject{{"version", 1}, {"downloads", rows}}).toJson();
+        if (bytes.size() > MaxQueueBytes) { error = q->tr("Download queue exceeds the size limit. The saved queue was left untouched."); emit q->changed(); return false; }
+        QSaveFile file(root + "/queue.json");
         if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit()) {
             error = q->tr("Cannot save download queue: %1").arg(file.errorString()); emit q->changed(); return false;
         }
@@ -190,7 +192,7 @@ struct DownloadManager::Impl {
     void load() {
         QFile file(root + "/queue.json");
         if (!file.exists()) return;
-        if (!file.open(QIODevice::ReadOnly) || file.size() > 16 * 1024 * 1024) { error = q->tr("Cannot read download queue."); writable = false; return; }
+        if (!file.open(QIODevice::ReadOnly) || file.size() > MaxQueueBytes) { error = q->tr("Cannot read download queue."); writable = false; return; }
         QJsonParseError parse;
         const auto doc = QJsonDocument::fromJson(file.readAll(), &parse);
         const auto object = doc.object();
@@ -213,6 +215,7 @@ struct DownloadManager::Impl {
             j->validator = QByteArray::fromBase64(o.value("validator").toString().toLatin1());
             j->validatorHeader = o.value("validatorHeader").toString().toLatin1();
             j->dateValidatorStrong = o.value("dateValidatorStrong").toBool(false);
+            j->effectiveUrl = o.value("effectiveUrl").toString();
             j->ranged = o.value("ranged").toBool();
             j->workerResumable = o.value("workerResumable").toBool();
             j->status = o.value("status").toString() == "complete" ? "complete" : "paused";
@@ -403,7 +406,8 @@ struct DownloadManager::Impl {
                     if(p->activity.elapsed()>j->timeoutSeconds*1000){fail(j,q->tr("The server did not respond before the transfer timeout."));} return;
                 }
                 const auto expected="bytes "+QByteArray::number(first)+"-"+QByteArray::number(p->last)+"/"+QByteArray::number(j->total);
-                if(r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()!=206 || r->rawHeader("Content-Range")!=expected || !identity(r) || r->rawHeader(j->validatorHeader)!=j->validator) {
+                if(r->url().adjusted(QUrl::RemoveFragment)!=QUrl(j->effectiveUrl).adjusted(QUrl::RemoveFragment) ||
+                   r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()!=206 || r->rawHeader("Content-Range")!=expected || !identity(r) || r->rawHeader(j->validatorHeader)!=j->validator) {
                     fail(j,q->tr("Server changed the file or returned an invalid byte range."));return;
                 }
                 p->checked=true;
@@ -519,6 +523,7 @@ struct DownloadManager::Impl {
         if (QFileInfo::exists(j->path) || QFileInfo(j->path).isSymLink()) { fail(j,q->tr("Destination already exists. Choose a different filename.")); return; }
         if (j->media || !httpUrl(QUrl(j->url)) || curlHttp(*j)) { startWorker(j); return; }
         if (j->ranged && received(*j)>0 && j->validatorHeader=="Last-Modified" && !j->dateValidatorStrong) { fail(j,q->tr("Old date-validated partials cannot be verified safely. Start a new download.")); return; }
+        if (j->ranged && received(*j)>0 && j->effectiveUrl.isEmpty()) { fail(j,q->tr("Saved partials lack a verified resource URL. Existing partial data was preserved. Start a new download.")); return; }
         if (QFileInfo::exists(root+"/"+j->id+"/transfer/resume.json")) { fail(j,q->tr("Saved worker partials need their original transport. Start a new download to change authentication transport.")); return; }
         j->status = "probing"; j->error.clear(); j->clock.start(); j->budgetClock.start();j->tokens=0; save(); emit q->changed();
         auto req = request(*j); req.setRawHeader("Range", "bytes=0-0");
@@ -574,7 +579,8 @@ struct DownloadManager::Impl {
                 r->deleteLater(); fail(j,q->tr("Server returned an invalid byte-range probe.")); return;
             }
             r->deleteLater();
-            const bool metadataChanged = j->total != total || j->validator != value || j->validatorHeader != header;
+            const auto effectiveUrl = r->url();
+            const bool metadataChanged = QUrl(j->effectiveUrl).adjusted(QUrl::RemoveFragment) != effectiveUrl.adjusted(QUrl::RemoveFragment) || j->total != total || j->validator != value || j->validatorHeader != header;
             if (j->ranged && received(*j)>0 && metadataChanged) { fail(j,q->tr("The remote file changed. Existing partial data was preserved.")); return; }
             if (value.isEmpty()) {
                 if (j->ranged && received(*j)>0) { fail(j,q->tr("Server no longer provides a resume validator.")); return; }
@@ -587,6 +593,7 @@ struct DownloadManager::Impl {
                 const int count = int(std::min<qint64>(j->connections,total));
                 for (int i = 0; i < count; ++i) { auto p = std::make_shared<Part>(); p->first = total / count * i; p->last = i == count-1 ? total-1 : total/count*(i+1)-1; j->parts.append(p); }
             }
+            j->effectiveUrl = effectiveUrl.toString(QUrl::FullyEncoded);
             j->ranged = true; j->total = total; j->validator = value; j->validatorHeader = header; j->dateValidatorStrong = header=="Last-Modified"; startRanges(j);
         });
     }
@@ -724,6 +731,8 @@ bool DownloadManager::refresh(const QString &id, const QString &input) {
     if(((j->ranged && d->received(*j)>0) || QFileInfo::exists(d->root+"/"+j->id+"/transfer/resume.json")) && (origin(old)!=origin(url) || old.path()!=url.path()))return reject(tr("A different resource cannot reuse saved bytes. Start it as a new download."));
     const bool active=j->status=="downloading" || j->status=="probing" || j->status=="error";d->stop(j);
     if(origin(old)!=origin(url)){j->headers.clear();j->username.clear();j->password.clear();j->access.reset();}
+    if(!j->effectiveUrl.isEmpty() && QUrl(j->effectiveUrl).adjusted(QUrl::RemoveFragment)==old.adjusted(QUrl::RemoveFragment))
+        j->effectiveUrl=url.toString(QUrl::FullyEncoded);
     j->url=url.toString(QUrl::FullyEncoded);j->error.clear();j->status="paused";if(!d->save())return false;
     d->error.clear();if(active)d->start(j);emit changed();return true;
 }

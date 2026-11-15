@@ -196,8 +196,8 @@ ApplicationWindow {
         if (key === "created") return d.created ? new Date(d.created).toLocaleString(Qt.locale(), Locale.ShortFormat) : ""
         return d[key] || ""
     }
-    function startQueue() { if (automationAvailable) automation.startQueue("Main download queue"); else backend.resumeAll() }
-    function stopQueue() { if (automationAvailable) automation.stopQueue("Main download queue"); else backend.pauseAll() }
+    function startQueue() { if (automationAvailable) automation.startQueue(filter.startsWith("queue:") ? filter.slice(6) : "Main download queue"); else backend.resumeAll() }
+    function stopQueue() { if (automationAvailable) automation.stopQueue(filter.startsWith("queue:") ? filter.slice(6) : "Main download queue"); else backend.pauseAll() }
     function loadPreferences() {
         if (!automationAvailable) return
         defaultDirectory = preferences.directory || backend.downloadDirectory

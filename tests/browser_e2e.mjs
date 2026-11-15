@@ -57,7 +57,7 @@ try {
   const dash=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-i',path.join(fixtures,'direct.mp4'),'-map','0','-c','copy','-seg_duration','1','-use_template','1','-use_timeline','1','-f','dash',path.join(fixtures,'dash/stream.mpd')],{encoding:'utf8'});assert.equal(dash.status,0,dash.stderr);
   await mkdir(path.join(fixtures,'protected-hls'));
   for(const name of await readdir(path.join(fixtures,'hls')))await writeFile(path.join(fixtures,'protected-hls',name),await readFile(path.join(fixtures,'hls',name)));
-  const payload=Buffer.alloc(128*1024,0x5a);let nativeFileRequests=0;
+  const payload=Buffer.alloc(128*1024,0x5a);let nativeFileRequests=0, contextPending=null, contextBrowserStarted=false, postPending=null;
   server=http.createServer(async(request,response)=>{
     const url=new URL(request.url,'http://localhost');
     if(url.pathname==='/'){
@@ -65,6 +65,23 @@ try {
       response.end('<!doctype html><title>IDM integration fixture</title><h1>Native download test</h1><video controls muted src="/direct.mp4"></video><a id="file" href="/download.bin" download>Download file</a><a id="manifest" href="/hls/intercept.m3u8" download>Download manifest</a><a id="fallback" href="/fallback.bin" download>Fallback file</a><script>fetch("/hls/stream.m3u8");fetch("/dash/stream.mpd");fetch("/protected-hls/stream.m3u8",{headers:{"X-Api-Key":"fixture-media-key",Authorization:"Bearer fixture-media-token"}});</script>');return;
     }
     if(!request.headers.cookie?.includes('idm_fixture=accepted')){response.writeHead(403);response.end('Cookie required');return;}
+    if(url.pathname==='/post-export.bin'){
+      if(request.method!=='POST'){response.writeHead(405);response.end();postPending?.();postPending=null;return;}
+      postPending=()=>{response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="post-export.bin"','Content-Length':payload.length});response.end(payload);};
+      return;
+    }
+    if(url.pathname==='/context-a'||url.pathname==='/context-b'){
+      response.writeHead(200,{'Content-Type':'text/html'});
+      response.end('<!doctype html><a id="context-download" href="/context-export.bin" download>Export</a>');return;
+    }
+    if(url.pathname==='/context-export.bin'){
+      const fromA=request.headers.referer?.endsWith('/context-a'), fromB=request.headers.referer?.endsWith('/context-b');
+      if(!fromA&&!fromB){response.writeHead(403);response.end();return;}
+      const finish=()=>{response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="context-export.bin"','Content-Length':payload.length});response.end(payload);};
+      if(fromA&&!contextBrowserStarted){contextBrowserStarted=true;contextPending=finish;return;}
+      if(fromB){response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':payload.length});response.end(payload);contextPending?.();contextPending=null;return;}
+      finish();return;
+    }
     if(url.pathname.startsWith('/protected-hls/')){
       if(request.headers['x-api-key']!=='fixture-media-key'||request.headers.authorization!=='Bearer fixture-media-token'){
         protectedMedia.denied++;response.writeHead(403,{'Cache-Control':'no-store'});response.end('Protected media context required');return;
@@ -180,14 +197,32 @@ try {
   await verifyMedia(interceptedManifest,'best');
   const manifestDownloads=await cdp.evaluate(popup,'new Promise(resolve=>chrome.downloads.search({},resolve))');
   assert(manifestDownloads.some(item=>item.url===origin+'/hls/intercept.m3u8'&&item.state==='interrupted'),'Browser manifest download must cancel after native media acceptance');
+  await cdp.evaluate(page,`(()=>{const frame=document.createElement('iframe');frame.name='post-export-frame';frame.hidden=true;document.body.append(frame);const form=document.createElement('form');form.target=frame.name;form.method='POST';form.action='/post-export.bin';const field=document.createElement('input');field.name='report';field.value='annual';form.append(field);document.body.append(form);form.submit();})()`);
+  await wait(()=>postPending,'pending POST export');
+  assert.equal(await cdp.evaluate(page,'fetch("/post-export.bin").then(r=>r.status)'),405);
+  const postDownload=await wait(async()=>{const items=await cdp.evaluate(popup,'new Promise(resolve=>chrome.downloads.search({},resolve))');return items.find(item=>item.url===origin+'/post-export.bin'&&item.state==='complete');},'POST attachment remains in the browser');
+  assert.deepEqual(await readFile(postDownload.filename),payload);
+  assert(!(await queue()).some(job=>job.url===origin+'/post-export.bin'),'POST attachment must not be replaced with a native GET');
+  const contextATarget=(await cdp.send('Target.createTarget',{url:origin+'/context-a',background:true})).targetId;
+  const contextBTarget=(await cdp.send('Target.createTarget',{url:origin+'/context-b',background:true})).targetId;
+  const contextA=await cdp.attach(contextATarget), contextB=await cdp.attach(contextBTarget);
+  await wait(()=>cdp.evaluate(contextA,'Boolean(document.getElementById("context-download"))'),'first export page');
+  await wait(()=>cdp.evaluate(contextB,'Boolean(document.getElementById("context-download"))'),'second export page');
+  await cdp.evaluate(contextA,'document.getElementById("context-download").click()');
+  await wait(()=>contextPending,'first tab download request');
+  assert.equal(await cdp.evaluate(contextB,'fetch("/context-export.bin").then(r=>r.status)'),200);
+  const contextJob=await completed(origin+'/context-export.bin');
+  assert.deepEqual(await readFile(contextJob.path),payload);
+  assert.equal(contextJob.headers.referer,origin+'/context-a','The native export must use its initiating tab, even after another tab requests the same URL');
+  await cdp.send('Target.closeTarget',{targetId:contextATarget});await cdp.send('Target.closeTarget',{targetId:contextBTarget});
   await writeFile(unavailable,'disabled for fallback verification\n');
   await cdp.evaluate(page,'document.getElementById("fallback").click()');
   const fallback=await wait(async()=>{const result=await cdp.evaluate(popup,'new Promise(resolve=>chrome.downloads.search({},resolve))');return result.find(item=>item.url===origin+'/fallback.bin'&&item.state==='complete');},'browser fallback after failed native handoff');
   assert.deepEqual(await readFile(fallback.filename),payload);
   assert(!(await queue()).some(job=>job.url===origin+'/fallback.bin'),'Rejected native handoff must not create a queue job');
   const fallbackStatus=await wait(async()=>{const result=await send({type:'sources'});return /Browser download continues/.test(result.status)?result.status:null;},'visible fallback status');
-  await writeFile(path.join(temporary,'result.json'),JSON.stringify({ok:true,checks:['real extension injection','floating panel capture','cookie context','network HLS and DASH detection','popup quality handoff','playable video and audio','decoded video frame hashes','automatic interception','octet-stream manifest interception','native file content hash','failed native handoff preserves browser download','protected HLS custom X-Api-Key and Bearer context','same-URL HTTP403 fresh-cookie/header recapture keeps one app job'],protectedMedia,recapture:recaptureProof,media:mediaResults,expectedDecodedVideoSha256:sha256(referenceFrames.join('\n')),expectedFileSha256:sha256(payload),nativeFileSha256:sha256(await readFile(file.path)),browserFallbackSha256:sha256(await readFile(fallback.filename)),fallbackStatus},null,2));
-  console.log('Real Chromium E2E passed: protected HLS headers, same-ID expired-context recovery, decoded media frames, interception and failed-host fallback');
+  await writeFile(path.join(temporary,'result.json'),JSON.stringify({ok:true,checks:['real extension injection','floating panel capture','cookie context','network HLS and DASH detection','popup quality handoff','playable video and audio','decoded video frame hashes','automatic interception','octet-stream manifest interception','POST attachment remains in browser','same-URL interception keeps initiating tab context','native file content hash','failed native handoff preserves browser download','protected HLS custom X-Api-Key and Bearer context','same-URL HTTP403 fresh-cookie/header recapture keeps one app job'],protectedMedia,recapture:recaptureProof,media:mediaResults,expectedDecodedVideoSha256:sha256(referenceFrames.join('\n')),expectedFileSha256:sha256(payload),nativeFileSha256:sha256(await readFile(file.path)),browserFallbackSha256:sha256(await readFile(fallback.filename)),fallbackStatus},null,2));
+  console.log('Real Chromium E2E passed: protected HLS headers, same-ID expired-context recovery, decoded media frames, GET interception, POST preservation, initiating-tab context and failed-host fallback');
 }finally{
   if(cdp){try{await cdp.send('Browser.close');}catch{}cdp.socket.close();}
   browser?.kill('SIGTERM');app?.kill('SIGTERM');

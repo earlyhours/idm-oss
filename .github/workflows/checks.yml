@@ -8,6 +8,8 @@ jobs:
       - name: Install free build tools
         run: pacman -Syu --noconfirm git rust qt6-base qt6-declarative qt6-wayland qt6-svg python nodejs yt-dlp ffmpeg curl clamav chromium networkmanager libcanberra libnotify xdg-utils glib2 krb5
       - uses: actions/checkout@v4
+      - name: Trust the checked-out workspace in the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Build
         run: bin/build
       - name: Rust file I/O

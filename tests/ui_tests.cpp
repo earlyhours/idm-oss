@@ -1145,6 +1145,59 @@ private slots:
         QVERIFY2(qmlWarnings.isEmpty(),qPrintable(qmlWarnings.join('\n')));
     }
 
+    void toolbarControlsTheSelectedQueue() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        QVERIFY(writeFile(temporary.filePath("language"), "en\n"));
+        Theme theme(temporary.path());
+        Translator translator(temporary.filePath("language"));
+        DownloadManager manager(temporary.filePath("state"));
+        Automation automation(&manager, temporary.filePath("state"), nullptr,
+                              [](const QStringList &, auto done) { done(0, {}); });
+        QVERIFY(automation.configure({{"directory", temporary.filePath("downloads")}, {"notifications", false}, {"sound", false}}));
+        QVERIFY(automation.setQueue("Work", {{"concurrent", 1}}));
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const auto url = QString("http://127.0.0.1:%1/").arg(server.serverPort());
+        const auto mainId = automation.enqueue({{"url", url + "main.bin"}, {"start", false}});
+        const auto workId = automation.enqueue({{"url", url + "work.bin"}, {"start", false}});
+        QVERIFY(!mainId.isEmpty() && !workId.isEmpty());
+        QVERIFY(automation.setJobPolicy(workId, {{"queue", "Work"}}));
+        auto status = [&](const QString &id) {
+            for (const auto &item : manager.downloads())
+                if (item.toMap().value("id") == id) return item.toMap().value("status").toString();
+            return QString();
+        };
+        PortalPicker picker;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("picker", &picker);
+        engine.rootContext()->setContextProperty("automation", &automation);
+        engine.rootContext()->setContextProperty("backend", &manager);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.load(QUrl("qrc:/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        window->setProperty("filter", "queue:Work");
+        QQuickItem *start = nullptr;
+        QTRY_VERIFY(start = window->findChild<QQuickItem *>("startQueueButton"));
+        QTRY_VERIFY(start->isVisible());
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, start->mapToScene(start->boundingRect().center()).toPoint());
+        QTRY_COMPARE(status(workId), "probing");
+        QCOMPARE(status(mainId), "paused");
+        QVERIFY(capture(window, "/tmp/idm-selected-queue.png"));
+        automation.startQueue("Main download queue");
+        QTRY_COMPARE(status(mainId), "probing");
+        QVERIFY(QMetaObject::invokeMethod(window, "toolbarAction", Q_ARG(QVariant, QVariant("stopQueue"))));
+        QTRY_COMPARE(status(workId), "paused");
+        QCOMPARE(status(mainId), "probing");
+        window->setProperty("filter", "all");
+        QVERIFY(QMetaObject::invokeMethod(window, "stopQueue"));
+        QTRY_COMPARE(status(mainId), "paused");
+    }
+
     void portalResponsesValidateLocalFolders() {
         PortalPicker picker;
         QSignalSpy selected(&picker, &PortalPicker::selected);

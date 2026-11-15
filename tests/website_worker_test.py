@@ -63,8 +63,10 @@ class WebsiteTests(unittest.TestCase):
                         if owner.range_behavior.startswith('range:'):
                             value = owner.range_behavior.removeprefix('range:')
                         self.send_header('Content-Range', value)
-                    if owner.range_behavior != 'no-length':
-                        self.send_header('Content-Length', str(end - start + 1))
+                    if owner.range_behavior == 'chunked':
+                        self.send_header('Transfer-Encoding', 'chunked')
+                    elif owner.range_behavior != 'no-length':
+                        self.send_header('Content-Length', str(end - start + 1) + (' \t' if owner.range_behavior == 'truncate-ows' else ''))
                     if owner.range_behavior != 'no-etag':
                         returned_etag = '"unexpected"' if owner.range_behavior == 'changed-etag' else etag
                         self.send_header('ETag', 'W/' + returned_etag if owner.range_behavior == 'weak' else returned_etag)
@@ -72,7 +74,9 @@ class WebsiteTests(unittest.TestCase):
                     self.send_header('Content-Type', 'application/octet-stream')
                     self.end_headers()
                     payload = body[start:end + 1]
-                    if owner.range_behavior == 'truncate': payload = payload[:max(1, len(payload) // 2)]
+                    if owner.range_behavior in ('truncate', 'truncate-ows'): payload = payload[:max(1, len(payload) // 2)]
+                    if owner.range_behavior == 'chunked':
+                        payload = f'{len(payload):x}\r\n'.encode() + payload + b'\r\n0\r\n\r\n'
                     try:
                         self.wfile.write(payload)
                     except (BrokenPipeError, ConnectionResetError):
@@ -263,6 +267,54 @@ class WebsiteTests(unittest.TestCase):
         code, rows = self.run_worker('/bomb', maxBytes=1000)
         self.assertEqual(code, 1); self.assertIn('byte budget', rows[-1]['error'])
         self.assertFalse((self.output / 'index.html').exists())
+
+    def test_crawl_rejects_truncated_bodies_and_preserves_the_previous_mirror(self):
+        self.file_body = b'<html><body>Original complete page</body></html>'
+        self.range_behavior = 'truncate'
+        code, rows = self.run_worker('/resumable')
+        self.assertEqual(code, 1, rows)
+        self.assertEqual(rows[-1]['event'], 'error')
+        self.assertIn('Incomplete', rows[-1]['error'])
+        self.assertFalse((self.output / 'index.html').exists())
+        self.assertFalse((self.output / '.idm-site-manifest.json').exists())
+
+        self.range_behavior = 'normal'
+        self.assertEqual(self.run_worker('/resumable')[0], 0)
+        original = (self.output / 'index.html').read_bytes()
+        manifest = self.manifest()
+        entry = manifest['resources'][self.url + '/resumable']
+        cached = (self.output / entry['rawPath']).read_bytes()
+        self.version = 2
+        self.file_body = b'<html><body>Changed complete page</body></html>'
+        self.range_behavior = 'truncate'
+        code, rows = self.run_worker('/resumable')
+        self.assertEqual(code, 1, rows)
+        self.assertFalse(any(row['event'] == 'complete' for row in rows))
+        self.assertEqual((self.output / 'index.html').read_bytes(), original)
+        self.assertEqual((self.output / entry['rawPath']).read_bytes(), cached)
+        self.assertEqual(self.manifest(), manifest)
+
+    def test_crawl_rejects_truncation_with_whitespace_in_content_length(self):
+        self.file_body = b'<html><body>Complete original page</body></html>'
+        self.range_behavior = 'truncate-ows'
+        code, rows = self.run_worker('/resumable')
+        self.assertEqual(code, 1, rows)
+        self.assertEqual(rows[-1]['event'], 'error')
+        self.assertIn('Incomplete', rows[-1]['error'])
+        self.assertFalse((self.output / 'index.html').exists())
+
+    def test_crawl_accepts_unknown_length_and_chunked_responses(self):
+        self.file_body = b'<html><body>Complete page without Content-Length</body></html>'
+        for framing in ('no-length', 'chunked'):
+            with self.subTest(framing=framing):
+                self.output = self.root / framing
+                self.range_behavior = framing
+                code, rows = self.run_worker('/resumable')
+                self.assertEqual(code, 0, rows)
+                self.assertTrue(rows[-1]['ok'])
+                self.assertIn('Complete page without Content-Length', (self.output / 'index.html').read_text())
+                entry = self.manifest()['resources'][self.url + '/resumable']
+                self.assertEqual((self.output / entry['rawPath']).read_bytes(), self.file_body)
 
     def test_directory_lock_rejects_an_overlapping_job_before_any_fetch(self):
         self.output.mkdir()
