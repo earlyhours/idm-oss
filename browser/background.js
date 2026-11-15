@@ -113,7 +113,7 @@
     if (!url) throw new Error('Only HTTP and HTTPS downloads are supported');
     const state = tabState(tabId);
     const context = state?.contexts.get(url);
-    const headers = context && Date.now() - context.time < 10 * 60 * 1000 ? { ...context.headers } : {};
+    const headers = context?.method === 'GET' && Date.now() - context.time < 10 * 60 * 1000 ? { ...context.headers } : {};
     const pageUrl = httpUrl(input.pageUrl) || httpUrl(tab?.url) || state?.pageUrl || '';
     if (!headers.Referer && pageUrl) headers.Referer = pageUrl;
     if (!headers['User-Agent'] && typeof navigator !== 'undefined') headers['User-Agent'] = navigator.userAgent;
@@ -155,12 +155,15 @@
   }
   function requestHeaders(details) {
     const state = tabState(details.tabId), url = httpUrl(details.url);
-    if (!state || !url || details.method !== 'GET') return;
-    forgetContext(state.contexts.get(url));
+    if (!state || !url) return;
+    const previous = state.contexts.get(url);
+    const ambiguous = previous && Date.now() - previous.time < 10 * 60 * 1000 && (previous.ambiguous || previous.method !== 'GET');
+    forgetContext(previous);
     const headers = {};
+    const pageUrl = httpUrl(details.documentUrl) || state.pageUrl;
     // Count UTF-16 storage for retained URL, header names and values.
-    let bytes = 2 * url.length, count = 0;
-    for (const header of details.requestHeaders || []) {
+    let bytes = 2 * (url.length + pageUrl.length), count = 0;
+    for (const header of details.method === 'GET' ? details.requestHeaders || [] : []) {
       const name = String(header.name).toLowerCase(), value = header.value;
       if ((!allowedHeaders.has(name) && !/^x-[a-z0-9!#$%&'*+.^_`|~-]+$/i.test(name)) || typeof value !== 'string' || value.length > 65536 || /[\r\n]/.test(value)) continue;
       const key = { cookie: 'Cookie', authorization: 'Authorization', 'accept-language': 'Accept-Language', referer: 'Referer', 'user-agent': 'User-Agent', origin: 'Origin', accept: 'Accept' }[name] || header.name;
@@ -168,13 +171,13 @@
       if (++count > 64 || bytes > MAX_CONTEXT_BYTES) return;
       headers[key] = value;
     }
-    const context = { time: Date.now(), headers, bytes, state, url };
+    const context = { time: Date.now(), method: details.method, ambiguous, pageUrl, headers, bytes, state, url };
     state.contexts.set(url, context);
     retainedContexts.add(context);
     retainedContextBytes += bytes;
     if (state.contexts.size > MAX_CONTEXTS) forgetContext(state.contexts.values().next().value);
     while (retainedContextBytes > MAX_RETAINED_CONTEXT_BYTES) forgetContext(retainedContexts.values().next().value);
-    if (mediaPattern.test(url)) record(details.tabId, { url, pageUrl: details.documentUrl || details.initiator });
+    if (details.method === 'GET' && mediaPattern.test(url)) record(details.tabId, { url, pageUrl: details.documentUrl || details.initiator });
   }
   try {
     chrome.webRequest.onBeforeSendHeaders.addListener(requestHeaders, { urls: ['http://*/*', 'https://*/*'] }, ['requestHeaders', 'extraHeaders']);
@@ -230,15 +233,20 @@
   chrome.downloads.onCreated.addListener(async item => {
     const url = httpUrl(item.finalUrl || item.url);
     if (!intercept || !url || !matchesType(item, url) || item.state === 'complete' || item.byExtensionId === chrome.runtime.id) return;
-    let tabId = -1, newest = 0, tab = null;
+    const referrer = httpUrl(item.referrer);
+    let tabId = -1, tab = null, selectedContext = null;
     for (const [id, state] of tabs) {
       const context = state.contexts.get(url);
-      if (!context || context.time <= newest) continue;
+      if (!context || Date.now() - context.time >= 10 * 60 * 1000 ||
+          (referrer && referrer !== httpUrl(context.headers.Referer) && referrer !== context.pageUrl)) continue;
       const candidate = await getTab(id);
       if (!candidate || (item.cookieStoreId && item.cookieStoreId !== candidate.cookieStoreId) ||
           (typeof item.incognito === 'boolean' && item.incognito !== candidate.incognito)) continue;
-      tabId = id; newest = context.time; tab = candidate;
+      // Unknown methods and ambiguous initiating tabs must keep their browser transfer.
+      if (tab) return;
+      tabId = id; tab = candidate; selectedContext = context;
     }
+    if (selectedContext?.method !== 'GET' || selectedContext.ambiguous || tabs.get(tabId)?.contexts.get(url) !== selectedContext) return;
     try {
       await handoff(tabId, { url, media: mediaMime(item.mime) || mediaPattern.test(url), pageUrl: item.referrer }, tab);
       chrome.downloads.cancel(item.id, () => {

@@ -226,6 +226,67 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(row(m)["received"].toLongLong()>8192,10000);m.pause(id);const auto before=row(m)["received"].toLongLong();s.etag="\"changed\"";m.resume(id);
         QTRY_COMPARE(row(m)["status"].toString(),QString("error"));QCOMPARE(row(m)["received"].toLongLong(),before);QVERIFY(!QFile::exists(row(m)["path"].toString()));
     }
+    void changedRedirectPreservesPartials_data() {
+        QTest::addColumn<bool>("restart");QTest::addColumn<bool>("query");
+        QTest::newRow("same process") << false << false;
+        QTest::newRow("after restart") << true << false;
+        QTest::newRow("query same process") << false << true;
+        QTest::newRow("query after restart") << true << true;
+    }
+    void changedRedirectPreservesPartials() {
+        QFETCH(bool,restart);QFETCH(bool,query);
+        const QString oldTarget=query?"/file?version=old":"/old",newTarget=query?"/file?version=new":"/new";
+        Server s;s.mode="redirect";s.redirectTarget=oldTarget;s.body="AAAAAAAA";
+        s.slow=true;s.chunkSize=4;s.chunkInterval=300;
+        QTemporaryDir dir;const auto state=dir.path()+"/state";QString id,path;
+        auto m=std::make_unique<DownloadManager>(state);
+        id=m->add(s.url("redirect"),dir.path()+"/out",1);
+        QTRY_COMPARE_WITH_TIMEOUT(row(*m)["received"].toLongLong(),qint64(4),5000);
+        m->pause(id);path=row(*m)["path"].toString();
+        const auto part=state+"/"+id+"/0.part";QCOMPARE(contents(part),QByteArray("AAAA"));
+        if(restart){m.reset();m=std::make_unique<DownloadManager>(state);}
+        s.redirectTarget=newTarget;s.body="BBBBBBBB";m->resume(id);
+        QTRY_COMPARE(row(*m)["status"].toString(),QString("error"));
+        QCOMPARE(contents(part),QByteArray("AAAA"));QVERIFY(!QFile::exists(path));
+        const auto queue=QJsonDocument::fromJson(contents(state+"/queue.json")).object();
+        QCOMPARE(queue["downloads"].toArray()[0].toObject()["effectiveUrl"].toString(),s.url(oldTarget.mid(1)));
+
+        if(!restart) {
+            s.redirectTarget=oldTarget;s.body="AAAAAAAA";m->resume(id);
+            QTRY_COMPARE(row(*m)["status"].toString(),QString("complete"));
+            QCOMPARE(contents(path),QByteArray("AAAAAAAA"));
+        }
+    }
+    void changedRedirectBetweenProbeAndBodyIsRejected_data() {
+        QTest::addColumn<bool>("query");QTest::newRow("path") << false;QTest::newRow("query") << true;
+    }
+    void changedRedirectBetweenProbeAndBodyIsRejected() {
+        QFETCH(bool,query);
+        Server s;s.mode="redirect";s.redirectTarget=query?"/file?version=old":"/old";s.body="AAAAAAAA";
+        QTemporaryDir dir;DownloadManager m(dir.path()+"/state");bool switched=false;
+        connect(&m,&DownloadManager::changed,this,[&] {
+            if(switched || row(m)["status"].toString()!="downloading")return;
+            switched=true;s.redirectTarget=query?"/file?version=new":"/new";s.body="BBBBBBBB";
+        });
+        m.add(s.url("redirect"),dir.path()+"/out",1);
+        QTRY_COMPARE(row(m)["status"].toString(),QString("error"));
+        QVERIFY(switched);QCOMPARE(row(m)["received"].toLongLong(),qint64(0));
+        QVERIFY(!QFile::exists(row(m)["path"].toString()));
+    }
+    void legacyPartialsWithoutResourceUrlArePreserved() {
+        Server s;s.slow=true;QTemporaryDir dir;const auto state=dir.path()+"/state";QString id;QByteArray before;
+        {
+            DownloadManager m(state);id=m.add(s.url(),dir.path()+"/out",1);
+            QTRY_VERIFY(row(m)["received"].toLongLong()>8192);m.pause(id);
+            before=contents(state+"/"+id+"/0.part");
+        }
+        const auto path=state+"/queue.json";auto queue=QJsonDocument::fromJson(contents(path)).object();
+        auto rows=queue["downloads"].toArray();auto entry=rows[0].toObject();entry.remove("effectiveUrl");rows[0]=entry;queue["downloads"]=rows;
+        QFile file(path);QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(queue).toJson());file.close();
+        const int requests=s.requests;DownloadManager m(state);m.resume(id);
+        QCOMPARE(row(m)["status"].toString(),QString("error"));QCOMPARE(s.requests,requests);
+        QCOMPARE(contents(state+"/"+id+"/0.part"),before);QVERIFY(!QFile::exists(row(m)["path"].toString()));
+    }
     void invalidRangeNeverPublishes() {
         Server s;s.mode="wrong";QTemporaryDir dir;DownloadManager m(dir.path()+"/state");m.add(s.url(),dir.path()+"/out");
         QTRY_COMPARE(row(m)["status"].toString(),QString("error"));QVERIFY(!QFile::exists(row(m)["path"].toString()));QCOMPARE(row(m)["received"].toLongLong(),0);

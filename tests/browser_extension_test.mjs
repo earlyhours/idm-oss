@@ -13,6 +13,7 @@ const flush = async () => { for(let i=0;i<8;i++) await Promise.resolve(); };
 
 function worker() {
   const nativeCalls=[], cancellations=[], menus=[], statuses=[], storage={}, sent=[], cookieReads=[];
+  let now=Date.now();
   const api={runtime:{id:extensionId,lastError:undefined,onInstalled:event(),onMessage:event()},
     webRequest:{onBeforeSendHeaders:event(),onHeadersReceived:event()},
     tabs:{onRemoved:event(),onUpdated:event(),get(id,callback){callback({id,url:'https://page.test/watch',title:'Fixture page'});},sendMessage(id,message,options,callback){if(typeof options==='function'){callback=options;options=undefined;}sent.push({id,message,...(options?{options}:{})});callback?.({ok:true,urls:['https://files.test/a.zip','https://files.test/b.pdf'],pageUrl:'https://page.test/watch',title:'Links'});}},
@@ -23,10 +24,10 @@ function worker() {
     downloads:{onCreated:event(),cancel(id,callback){cancellations.push(id);callback?.();}}};
   let nativeHandler=(_host,_message,callback)=>callback({ok:true,id:'accepted-id',ids:['one','two'],errors:[]});
   api.runtime.sendNativeMessage=(host,message,callback)=>{nativeCalls.push({host,message:plain(message)});nativeHandler(host,message,callback);};
-  vm.runInNewContext(background,{chrome:api,URL,Map,Set,Date,TextEncoder,navigator:{userAgent:'FixtureAgent/1.0'}},{filename:'background.js'});
+  vm.runInNewContext(background,{chrome:api,URL,Map,Set,Date:{now:()=>++now},TextEncoder,navigator:{userAgent:'FixtureAgent/1.0'}},{filename:'background.js'});
   const sender={id:extensionId,url:`chrome-extension://${extensionId}/popup.html`};
   function message(value,from=sender){return new Promise(resolve=>api.runtime.onMessage.listeners[0](value,from,result=>resolve(plain(result))));}
-  function headers(url,values=[],tabId=7){api.webRequest.onBeforeSendHeaders.listeners[0]({tabId,url,method:'GET',requestHeaders:values,documentUrl:'https://page.test/watch'});}
+  function headers(url,values=[],tabId=7,details={}){api.webRequest.onBeforeSendHeaders.listeners[0]({tabId,url,method:'GET',requestHeaders:values,documentUrl:'https://page.test/watch',...details});}
   function response(url,mime,tabId=7){api.webRequest.onHeadersReceived.listeners[0]({tabId,url,method:'GET',statusCode:200,responseHeaders:[{name:'Content-Type',value:mime}],documentUrl:'https://page.test/watch'});}
   return {api,nativeCalls,cancellations,menus,statuses,storage,sent,cookieReads,message,headers,response,setNative(fn){nativeHandler=fn;}};
 }
@@ -101,6 +102,7 @@ test('captured authentication and custom headers stay private and reach native r
 
 test('automatic interception defaults off and never cancels before native acceptance',async()=>{
   const w=worker(),item={id:44,url:'https://files.test/file.zip',state:'in_progress'};
+  w.headers(item.url);
   await w.api.downloads.onCreated.listeners[0](item);
   assert.equal(w.nativeCalls.length,0);assert.deepEqual(w.cancellations,[]);
   await w.message({type:'settings',intercept:true,tabId:7});
@@ -114,12 +116,13 @@ test('automatic interception defaults off and never cancels before native accept
 
 test('manifest interception uses media capture even without a useful MIME type',async()=>{
   const w=worker();await w.message({type:'settings',intercept:true,tabId:7});
+  w.headers('https://files.test/stream.m3u8');
   await w.api.downloads.onCreated.listeners[0]({id:91,url:'https://files.test/stream.m3u8',mime:'application/octet-stream'});
   assert.equal(w.nativeCalls[0].message.request.media,true);
   assert.deepEqual(w.cancellations,[91]);
 });
 
-test('interception without a surviving tab never reads the default cookie store',async()=>{
+test('interception without a surviving tab leaves the browser download running',async()=>{
   for(const captured of [false,true]){
     const w=worker(),url='https://files.test/file.zip';
     await w.message({type:'settings',intercept:true,tabId:7});
@@ -127,8 +130,8 @@ test('interception without a surviving tab never reads the default cookie store'
     w.api.tabs.get=(_id,callback)=>{w.api.runtime.lastError={message:'Tab closed'};callback();w.api.runtime.lastError=undefined;};
     await w.api.downloads.onCreated.listeners[0]({id:45,url});
     assert.deepEqual(w.cookieReads,[]);
-    assert.equal(w.nativeCalls[0].message.request.headers.Cookie,undefined);
-    assert.deepEqual(w.cancellations,[45]);
+    assert.deepEqual(w.nativeCalls,[]);
+    assert.deepEqual(w.cancellations,[]);
   }
 });
 
@@ -149,6 +152,83 @@ test('cookie fallback uses only the explicit container or matching tab store',as
   assert.equal(w.nativeCalls[0].message.request.headers.Cookie,undefined);
 });
 
+test('automatic interception preserves POST and unknown-method downloads even after a prior GET',async()=>{
+  for(const method of ['POST',undefined]){
+    const w=worker(),url='https://files.test/export.zip';
+    await w.message({type:'settings',intercept:true,tabId:7});
+    w.headers(url,[{name:'Authorization',value:'stale-get-token'}]);
+    w.headers(url,[],7,{method});
+    await w.api.downloads.onCreated.listeners[0]({id:47,url,referrer:'https://page.test/watch'});
+    assert.deepEqual(w.nativeCalls,[]);
+    assert.deepEqual(w.cancellations,[]);
+  }
+  const w=worker();await w.message({type:'settings',intercept:true,tabId:7});
+  await w.api.downloads.onCreated.listeners[0]({id:48,url:'https://files.test/unobserved.zip'});
+  assert.deepEqual(w.nativeCalls,[]);assert.deepEqual(w.cancellations,[]);
+});
+
+test('a later GET cannot make an overlapping same-tab POST download replayable',async()=>{
+  for(const method of ['POST',undefined]){
+    const w=worker(),url='https://files.test/export.zip';
+    await w.message({type:'settings',intercept:true,tabId:7});
+    w.headers(url,[],7,{method});
+    for(let i=0;i<2;i++){
+      w.headers(url,[{name:'Authorization',value:'unrelated-get-token'}]);
+      await w.api.downloads.onCreated.listeners[0]({id:53+i,url,referrer:'https://page.test/watch'});
+      assert.deepEqual(w.nativeCalls,[]);
+      assert.deepEqual(w.cancellations,[]);
+    }
+  }
+});
+
+test("automatic interception uses the initiating referrer instead of another tab's newer headers",async()=>{
+  const w=worker(),url='https://files.test/export.zip';
+  await w.message({type:'settings',intercept:true,tabId:7});
+  w.headers(url,[{name:'Referer',value:'https://page.test/account-7'},{name:'Authorization',value:'Bearer account-A'}],7);
+  w.headers(url,[{name:'Referer',value:'https://page.test/account-8'},{name:'Authorization',value:'Bearer account-B'}],8);
+  await w.api.downloads.onCreated.listeners[0]({id:49,url,referrer:'https://page.test/account-7'});
+  assert.equal(w.nativeCalls.length,1);
+  const request=w.nativeCalls[0].message.request;
+  assert.equal(request.headers.Authorization,'Bearer account-A');
+  assert.equal(request.headers.Referer,'https://page.test/account-7');
+  assert.equal(request.pageUrl,'https://page.test/account-7');
+  assert.deepEqual(w.cancellations,[49]);
+});
+
+test('interception matches the captured tab page when Chromium omits download request headers',async()=>{
+  const w=worker(),url='https://files.test/export.zip',pageUrl='https://page.test/export';
+  await w.message({type:'settings',intercept:true,tabId:7});
+  w.api.tabs.onUpdated.listeners[0](7,{url:pageUrl},{url:pageUrl});
+  w.headers(url,[],7,{documentUrl:undefined});
+  await w.api.downloads.onCreated.listeners[0]({id:51,url,referrer:pageUrl});
+  assert.equal(w.nativeCalls.length,1);
+  assert.equal(w.nativeCalls[0].message.request.headers.Referer,pageUrl);
+  assert.deepEqual(w.cancellations,[51]);
+});
+
+test('interception attributes an origin-only request Referer to its captured full page',async()=>{
+  const w=worker(),url='https://files.test/export.zip';
+  await w.message({type:'settings',intercept:true,tabId:7});
+  w.headers(url,[{name:'Referer',value:'https://page.test/'}],7,{documentUrl:'https://page.test/account-7'});
+  w.headers(url,[{name:'Referer',value:'https://page.test/'}],8,{documentUrl:'https://page.test/account-8'});
+  await w.api.downloads.onCreated.listeners[0]({id:52,url,referrer:'https://page.test/account-7'});
+  assert.equal(w.nativeCalls.length,1);
+  assert.equal(w.nativeCalls[0].message.request.pageUrl,'https://page.test/account-7');
+  assert.equal(w.nativeCalls[0].message.request.headers.Referer,'https://page.test/');
+  assert.deepEqual(w.cancellations,[52]);
+});
+
+test('automatic interception preserves downloads with ambiguous or mismatched initiating context',async()=>{
+  for(const referrer of [undefined,'https://page.test/watch','https://page.test/other']){
+    const w=worker(),url='https://files.test/export.zip';
+    await w.message({type:'settings',intercept:true,tabId:7});
+    w.headers(url,[{name:'Authorization',value:'Bearer account-A'}],7);
+    w.headers(url,[{name:'Authorization',value:'Bearer account-B'}],8);
+    await w.api.downloads.onCreated.listeners[0]({id:50,url,referrer});
+    assert.deepEqual(w.nativeCalls,[]);assert.deepEqual(w.cancellations,[]);
+  }
+});
+
 test('intercepted downloads cannot borrow captured credentials from another cookie store',async()=>{
   for(const container of [true,false]){
     const w=worker(),url='https://files.test/shared.zip';
@@ -166,12 +246,14 @@ test('intercepted downloads cannot borrow captured credentials from another cook
 test('failed native handoff and malformed acceptance leave browser download running',async()=>{
   for(const outcome of [{ok:false,error:'Disk full'},{ok:true}]){
     const w=worker();await w.message({type:'settings',intercept:true,tabId:7});
+    w.headers('https://files.test/a.zip');
     w.setNative((_host,_message,callback)=>callback(outcome));
     await w.api.downloads.onCreated.listeners[0]({id:8,url:'https://files.test/a.zip'});
     assert.deepEqual(w.cancellations,[]);
     assert.match((await w.message({type:'sources',tabId:7})).status,/Browser download continues/);
   }
   const w=worker();await w.message({type:'settings',intercept:true,tabId:7});
+  w.headers('https://files.test/a.zip');
   w.setNative((_host,_message,callback)=>{w.api.runtime.lastError={message:'Native host missing'};callback();w.api.runtime.lastError=undefined;});
   await w.api.downloads.onCreated.listeners[0]({id:8,url:'https://files.test/a.zip'});
   assert.deepEqual(w.cancellations,[]);
@@ -180,6 +262,7 @@ test('failed native handoff and malformed acceptance leave browser download runn
 test('custom file filters and panel preferences validate and persist without credentials',async()=>{
   const w=worker();
   assert.equal((await w.message({type:'settings',intercept:true,interceptTypes:'zip,pdf',showPanel:false,panelPosition:'left',tabId:7})).ok,true);
+  w.headers('https://files.test/a.pdf');
   await w.api.downloads.onCreated.listeners[0]({id:1,url:'https://files.test/a.exe'});
   assert.equal(w.nativeCalls.length,0);
   await w.api.downloads.onCreated.listeners[0]({id:2,url:'https://files.test/a.pdf'});

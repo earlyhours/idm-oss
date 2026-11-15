@@ -113,6 +113,67 @@ class AutomationAdversarialTests : public QObject {
     write(share + "/browser/chromium/manifest.json", "{}");
   }
 private slots:
+  void queueSizeLimitRejectsTheNewJobAndKeepsSavedJobsReadable() {
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const auto state = temporary.filePath("state");
+    const auto queuePath = state + "/queue.json";
+    QVariantMap headers;
+    for (int i = 0; i < 4; ++i)
+      headers[QString("X-Large-%1").arg(i)] = QString(15000, 'a');
+    const QVariantMap request{{"url", "http://example.invalid/file"},
+                              {"directory", temporary.filePath("out")},
+                              {"headers", headers}, {"start", false}};
+    {
+      DownloadManager manager(state);
+      QVERIFY(!manager.addRequest(request).isEmpty());
+    }
+    QFile file(queuePath);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    auto object = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    const auto seed = object["downloads"].toArray().first().toObject();
+    QJsonArray rows;
+    for (int i = 0; i < 270; ++i) {
+      auto row = seed;
+      row["id"] = QString::number(i, 16).rightJustified(32, '0');
+      row["path"] = temporary.filePath(QString("out/file-%1").arg(i));
+      rows.append(row);
+    }
+    object["downloads"] = rows;
+    const auto initial = QJsonDocument(object).toJson();
+    QVERIFY(initial.size() < 16 * 1024 * 1024);
+    write(queuePath, initial);
+    int accepted = rows.size();
+    {
+      DownloadManager manager(state);
+      QCOMPARE(manager.downloads().size(), accepted);
+      QVERIFY(manager.error().isEmpty());
+      auto lastSaved = initial;
+      bool rejected = false;
+      for (int i = 0; i < 10; ++i) {
+        const auto id = manager.addRequest(request);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto saved = file.readAll();
+        file.close();
+        if (id.isEmpty()) {
+          rejected = true;
+          QVERIFY(!manager.error().isEmpty());
+          QCOMPARE(saved, lastSaved);
+          break;
+        }
+        ++accepted;
+        lastSaved = saved;
+      }
+      QVERIFY(rejected);
+      QCOMPARE(manager.downloads().size(), accepted);
+      QVERIFY(file.size() <= 16 * 1024 * 1024);
+    }
+    DownloadManager reloaded(state);
+    QVERIFY(reloaded.error().isEmpty());
+    QCOMPARE(reloaded.downloads().size(), accepted);
+  }
+
   void mixedAntivirusResultsNeverScheduleCompletionAction() {
     AdversarialServer server;
     QTemporaryDir temp;
