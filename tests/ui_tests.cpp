@@ -1184,6 +1184,7 @@ private slots:
         QQuickItem *start = nullptr;
         QTRY_VERIFY(start = window->findChild<QQuickItem *>("startQueueButton"));
         QTRY_VERIFY(start->isVisible());
+        QTest::qWait(200);
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, start->mapToScene(start->boundingRect().center()).toPoint());
         QTRY_COMPARE(status(workId), "probing");
         QCOMPARE(status(mainId), "paused");
